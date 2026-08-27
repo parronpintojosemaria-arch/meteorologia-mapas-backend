@@ -10,7 +10,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Robo
 *{box-sizing:border-box}.app{height:100%;display:flex;flex-direction:column;min-width:0}.top{padding:10px 12px;background:linear-gradient(135deg,#06294b,#0b4f84);box-shadow:0 2px 14px #0005;z-index:1001}.title{font-weight:800;font-size:16px}.sub{font-size:11px;opacity:.85;margin-top:2px}.controls{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.controls label{display:flex;flex-direction:column;gap:3px;font-size:10px;min-width:120px;flex:1}.controls select{width:100%;min-width:0;border:1px solid #5fa8df;background:#fff;color:#10243a;border-radius:7px;padding:7px 8px;font-size:13px}.status{margin-top:7px;font-size:11px;white-space:normal;overflow-wrap:anywhere}.mapwrap{position:relative;flex:1;min-height:0;min-width:0}#map{position:absolute;inset:0}.badge{position:absolute;z-index:900;left:9px;bottom:9px;max-width:calc(100% - 18px);background:rgba(5,20,37,.88);border:1px solid rgba(255,255,255,.2);color:#fff;padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.35;pointer-events:none}.leaflet-control-attribution{font-size:9px!important}@media(max-width:700px){.top{padding:8px}.title{font-size:14px}.controls{display:grid;grid-template-columns:1fr 1fr}.controls label{min-width:0}.status{font-size:10px}}@media(max-width:420px){.controls{grid-template-columns:1fr}.controls select{font-size:12px;padding:6px 7px}.top{max-height:47vh;overflow:auto}.badge{font-size:10px}}
 </style>
 </head>
-<body><div class="app"><header class="top"><div class="title">Meteorología Interactiva · ECMWF IFS</div><div class="sub">Datos ECMWF Open Data · mapa ligero Leaflet · sin WebGL</div><div class="controls"><label>Tipo<select id="kind"><option value="surface">Superficie</option><option value="pressure">Niveles de presión</option><option value="jet">Jet Stream 250 hPa</option></select></label><label id="varLabel">Variable<select id="variable"><option value="temperature_2m">Temperatura 2 m</option><option value="wind_10m">Viento 10 m</option><option value="cloud_cover_total">Nubosidad total</option><option value="precipitation_total">Precipitación acumulada</option><option value="snowfall_water_equivalent">Nieve · equivalente en agua</option></select></label><label id="levelLabel" style="display:none">Nivel<select id="level"><option>925</option><option>850</option><option>700</option><option>500</option><option>300</option><option>250</option><option>200</option></select></label><label>Pronóstico<select id="step"></select></label></div><div class="status" id="status">Cargando datos…</div></header><div class="mapwrap"><div id="map"></div><div class="badge" id="badge">ECMWF IFS</div></div></div>
+<body><div class="app"><header class="top"><div class="title">Meteorología Interactiva · ECMWF IFS</div><div class="sub">Datos ECMWF Open Data · mapa ligero Leaflet · sin WebGL</div><div class="controls"><label>Tipo<select id="kind"><option value="surface">Superficie</option><option value="pressure">Niveles de presión</option><option value="jet">Jet Stream</option></select></label><label id="varLabel">Variable<select id="variable"><option value="temperature_2m">Temperatura 2 m</option><option value="wind_10m">Viento 10 m</option><option value="cloud_cover_total">Nubosidad total</option><option value="precipitation_total">Precipitación acumulada</option><option value="snowfall_water_equivalent">Nieve · equivalente en agua</option></select></label><label id="levelLabel" style="display:none">Nivel<select id="level"><option>925</option><option>850</option><option>700</option><option>500</option><option>300</option><option>250</option><option>200</option></select></label><label id="jetLevelLabel" style="display:none">Nivel Jet<select id="jetLevel"><option>300</option><option selected>250</option><option>200</option></select></label><label>Pronóstico<select id="step"></select></label></div><div class="status" id="status">Cargando datos…</div></header><div class="mapwrap"><div id="map"></div><div class="badge" id="badge">ECMWF IFS</div></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (async function(){
@@ -18,29 +18,33 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Robo
  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
  const defaultBounds=[[20,-25],[72,45]]; let overlay=null;
  const q=id=>document.getElementById(id), status=q('status'), badge=q('badge');
- let surface,pressure,jet;
+ let surface,pressure,jets={};
  try{
-   [surface,pressure,jet]=await Promise.all([
+   const loaded=await Promise.all([
      fetch('./manifest.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('surface '+r.status);return r.json()}),
      fetch('./manifest-pressure-levels.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('pressure '+r.status);return r.json()}),
-     fetch('./manifest-jet.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('jet '+r.status);return r.json()})
+     fetch('./manifest-jet-300.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('jet300 '+r.status);return r.json()}),
+     fetch('./manifest-jet-250.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('jet250 '+r.status);return r.json()}),
+     fetch('./manifest-jet-200.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('jet200 '+r.status);return r.json()})
    ]);
+   surface=loaded[0];pressure=loaded[1];jets={300:loaded[2],250:loaded[3],200:loaded[4]};
  } catch(e){status.textContent='No se pudieron cargar los manifiestos: '+e.message;return;}
+ function currentJet(){return jets[parseInt(q('jetLevel').value,10)]||null;}
  function stepsForKind(){
    const kind=q('kind').value;
    if(kind==='surface')return Object.keys(surface.steps||{});
-   if(kind==='jet')return Object.keys(jet.steps||{});
+   if(kind==='jet')return Object.keys(currentJet()?.steps||{});
    const lev=q('level').value+'hpa';
    return Object.keys((pressure.levels&&pressure.levels[lev]&&pressure.levels[lev].steps)||{});
  }
  function fillSteps(){const old=q('step').value;q('step').innerHTML='';stepsForKind().forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent='+'+parseInt(k.slice(1),10)+' h';q('step').appendChild(o)});if([...q('step').options].some(o=>o.value===old))q('step').value=old;}
- function selectedRecord(){const step=q('step').value;const kind=q('kind').value;if(kind==='surface')return surface.steps?.[step]?.[q('variable').value]||null;if(kind==='jet')return jet.steps?.[step]||null;const lev=q('level').value+'hpa';return pressure.levels?.[lev]?.steps?.[step]||null;}
- function titleFor(){const kind=q('kind').value;if(kind==='surface')return q('variable').selectedOptions[0]?.textContent||'Superficie';if(kind==='jet')return 'Jet Stream 250 hPa · viento + geopotencial';return q('level').value+' hPa · Temperatura + geopotencial';}
- function runFor(){const kind=q('kind').value;if(kind==='surface')return surface.run_utc||'';if(kind==='jet')return jet.run_utc||'';return pressure.run_utc||'';}
+ function selectedRecord(){const step=q('step').value;const kind=q('kind').value;if(kind==='surface')return surface.steps?.[step]?.[q('variable').value]||null;if(kind==='jet')return currentJet()?.steps?.[step]||null;const lev=q('level').value+'hpa';return pressure.levels?.[lev]?.steps?.[step]||null;}
+ function titleFor(){const kind=q('kind').value;if(kind==='surface')return q('variable').selectedOptions[0]?.textContent||'Superficie';if(kind==='jet')return 'Jet Stream '+q('jetLevel').value+' hPa · viento + geopotencial';return q('level').value+' hPa · Temperatura + geopotencial';}
+ function runFor(){const kind=q('kind').value;if(kind==='surface')return surface.run_utc||'';if(kind==='jet')return currentJet()?.run_utc||'';return pressure.run_utc||'';}
  function boundsFor(rec){if(rec&&rec.bounds&&Number.isFinite(rec.bounds.south)&&Number.isFinite(rec.bounds.west)&&Number.isFinite(rec.bounds.north)&&Number.isFinite(rec.bounds.east))return [[rec.bounds.south,rec.bounds.west],[rec.bounds.north,rec.bounds.east]];return defaultBounds;}
  function draw(){const rec=selectedRecord();if(overlay){map.removeLayer(overlay);overlay=null;}if(!rec){status.textContent='No hay datos para esta selección.';badge.textContent='ECMWF IFS · '+titleFor();return;}if(rec.status!=='ok'){status.textContent=(rec.status==='not_applicable'?'No aplicable':'No disponible')+(rec.note?' · '+rec.note:'');badge.textContent='ECMWF IFS · '+titleFor();return;}overlay=L.imageOverlay('./'+rec.image,boundsFor(rec),{opacity:.74,interactive:false}).addTo(map);overlay.bringToFront();const run=runFor();status.textContent='Datos reales ECMWF Open Data · '+titleFor()+' · '+q('step').selectedOptions[0].textContent+(run?' · ejecución '+run:'');badge.textContent='ECMWF IFS · '+titleFor();}
- function mode(){const kind=q('kind').value;q('varLabel').style.display=kind==='surface'?'flex':'none';q('levelLabel').style.display=kind==='pressure'?'flex':'none';fillSteps();draw();setTimeout(()=>map.invalidateSize(),100);}
- q('kind').addEventListener('change',mode);q('variable').addEventListener('change',draw);q('level').addEventListener('change',()=>{fillSteps();draw()});q('step').addEventListener('change',draw);
+ function mode(){const kind=q('kind').value;q('varLabel').style.display=kind==='surface'?'flex':'none';q('levelLabel').style.display=kind==='pressure'?'flex':'none';q('jetLevelLabel').style.display=kind==='jet'?'flex':'none';fillSteps();draw();setTimeout(()=>map.invalidateSize(),100);}
+ q('kind').addEventListener('change',mode);q('variable').addEventListener('change',draw);q('level').addEventListener('change',()=>{fillSteps();draw()});q('jetLevel').addEventListener('change',()=>{fillSteps();draw()});q('step').addEventListener('change',draw);
  fillSteps();draw();map.fitBounds(defaultBounds,{padding:[6,6]});
 })();
 </script></body></html>
