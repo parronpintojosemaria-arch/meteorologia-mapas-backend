@@ -8,6 +8,7 @@ on:
       - "site/**"
       - "scripts/ecmwf_surface_phase2.py"
       - "scripts/ecmwf_pressure_levels_phase4.py"
+      - "scripts/ecmwf_jet_phase11.py"
       - "requirements.txt"
       - ".github/workflows/publish-ecmwf-pages.yml"
   schedule:
@@ -54,12 +55,19 @@ jobs:
           FORECAST_STEPS: "0,12,24"
         run: python scripts/ecmwf_pressure_levels_phase4.py
 
+      - name: Generar Jet Stream ECMWF 250 hPa
+        env:
+          JET_LEVEL: "250"
+          FORECAST_STEPS: "0,12,24"
+        run: python scripts/ecmwf_jet_phase11.py
+
       - name: Preparar web estática
         run: |
           rm -rf _site
           mkdir -p _site
           cp -R public/. _site/
           cp -R public-pressure/. _site/
+          cp -R public-jet/. _site/
           cp site/index.html _site/index.html
           touch _site/.nojekyll
 
