@@ -30,10 +30,12 @@ SOURCES = ("ecmwf", "aws", "google")
 G0 = 9.80665
 
 LEVEL_STYLE = {
+    925: {"tmin": -15, "tmax": 40, "contour": 30},
     850: {"tmin": -20, "tmax": 35, "contour": 30},
     700: {"tmin": -30, "tmax": 25, "contour": 30},
     500: {"tmin": -45, "tmax": 15, "contour": 60},
     300: {"tmin": -65, "tmax": -20, "contour": 120},
+    250: {"tmin": -72, "tmax": -25, "contour": 120},
     200: {"tmin": -75, "tmax": -30, "contour": 120},
 }
 
