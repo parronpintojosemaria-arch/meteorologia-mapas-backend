@@ -1,0 +1,44 @@
+name: Generar ECMWF Superficie Georreferenciada Fase 15
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ecmwf_surface_georef_phase15.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-surface-georef-phase15.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-superficie-georef-fase15:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar superficie ECMWF con límites reales de celda
+        env:
+          FORECAST_STEPS: "0,12,24"
+        run: python scripts/ecmwf_surface_georef_phase15.py
+
+      - name: Guardar mapas y manifiesto Fase 15
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-ecmwf-superficie-georef-fase15
+          path: public-surface15/
+          if-no-files-found: error
+          retention-days: 7
