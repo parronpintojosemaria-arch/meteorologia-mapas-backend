@@ -40,12 +40,11 @@ LEVEL_STYLE = {
 }
 
 
-def client_for(source):
+def client_for(source: str) -> Client:
     return Client(source=source, model="ifs", resol="0p25")
 
 
-def retrieve_field(param, level, step, target, run_dt=None):
-    errors = []
+def retrieve_field(param: str, level: int, step: int, target: Path, run_dt=None):
     request = {
         "type": "fc",
         "step": step,
@@ -57,36 +56,60 @@ def retrieve_field(param, level, step, target, run_dt=None):
         request["date"] = int(run_dt.strftime("%Y%m%d"))
         request["time"] = int(run_dt.strftime("%H"))
 
+    errors = []
     for source in SOURCES:
         try:
             result = client_for(source).retrieve(**request, target=str(target))
             return source, result.datetime
         except Exception as exc:
             errors.append(f"{source}: {exc}")
-
     raise RuntimeError(
         f"No se pudo obtener {param} a {level} hPa +{step} h: " + " | ".join(errors)
     )
 
 
-def read_field(path):
-    ds = xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
-    if not ds.data_vars:
-        raise RuntimeError(f"GRIB sin variables: {path.name}")
-    da = ds[list(ds.data_vars)[0]]
+def normalize_crop(da):
     if "longitude" in da.coords and float(da.longitude.max()) > 180:
         da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180)).sortby("longitude")
     if float(da.latitude[0]) < float(da.latitude[-1]):
         da = da.sortby("latitude", ascending=False)
-    da = da.sel(latitude=slice(NORTH, SOUTH), longitude=slice(WEST, EAST))
-    return da.values.astype("float32"), da.attrs.get("units", "")
+    return da.sel(latitude=slice(NORTH, SOUTH), longitude=slice(WEST, EAST))
 
 
-def project(values, resampling=Resampling.bilinear):
+def read_field(path: Path):
+    ds = xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
+    if not ds.data_vars:
+        raise RuntimeError(f"GRIB sin variables: {path.name}")
+    da = normalize_crop(ds[list(ds.data_vars)[0]])
+    values = da.values.astype("float32")
+    lat = da.latitude.values.astype("float64")
+    lon = da.longitude.values.astype("float64")
+    if lat.size < 2 or lon.size < 2:
+        raise RuntimeError("Malla insuficiente para calcular límites reales")
+
+    dx = float(np.median(np.abs(np.diff(lon))))
+    dy = float(np.median(np.abs(np.diff(lat))))
+    bounds = {
+        "west": float(lon[0] - dx / 2),
+        "east": float(lon[-1] + dx / 2),
+        "north": float(lat[0] + dy / 2),
+        "south": float(lat[-1] - dy / 2),
+    }
+    return values, da.attrs.get("units", ""), bounds
+
+
+def same_bounds(a, b, tol=1e-6):
+    return all(abs(float(a[k]) - float(b[k])) <= tol for k in ("west", "east", "south", "north"))
+
+
+def project(values, bounds, resampling=Resampling.bilinear):
     h, w = values.shape
-    src_transform = from_bounds(WEST, SOUTH, EAST, NORTH, w, h)
+    src_transform = from_bounds(
+        bounds["west"], bounds["south"], bounds["east"], bounds["north"], w, h
+    )
     dst_transform, dw, dh = calculate_default_transform(
-        "EPSG:4326", "EPSG:3857", w, h, WEST, SOUTH, EAST, NORTH
+        "EPSG:4326", "EPSG:3857", w, h,
+        bounds["west"], bounds["south"], bounds["east"], bounds["north"]
     )
     dst = np.full((dh, dw), np.nan, dtype="float32")
     reproject(
@@ -116,12 +139,17 @@ def geopotential_height(values, units):
     return values
 
 
-def render_composite(t_c, gh_m, level, out):
+def render_composite(t_c, gh_m, level, bounds, out: Path):
     style = LEVEL_STYLE.get(level, LEVEL_STYLE[500])
-    t = project(t_c)
-    z = project(gh_m)
+    t = project(t_c, bounds)
+    z = project(gh_m, bounds)
+    if t.shape != z.shape:
+        raise RuntimeError("Temperatura y geopotencial proyectados no coinciden")
 
-    fig = plt.figure(figsize=(14, 10.4), dpi=120)
+    h, w = t.shape
+    scale = 4
+    dpi = 100
+    fig = plt.figure(figsize=(w * scale / dpi, h * scale / dpi), dpi=dpi)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
 
@@ -141,14 +169,24 @@ def render_composite(t_c, gh_m, level, out):
         spacing = style["contour"]
         lo = int(np.floor(finite.min() / spacing) * spacing)
         hi = int(np.ceil(finite.max() / spacing) * spacing)
-        levels = np.arange(lo, hi + spacing, spacing)
-        if len(levels) >= 2:
-            cs = ax.contour(z, levels=levels, colors="black", linewidths=0.85, alpha=0.88)
+        contour_levels = np.arange(lo, hi + spacing, spacing)
+        if len(contour_levels) >= 2:
+            cs = ax.contour(
+                z,
+                levels=contour_levels,
+                origin="upper",
+                colors="black",
+                linewidths=0.85,
+                alpha=0.88,
+            )
             ax.clabel(cs, inline=True, fontsize=7, fmt="%d")
+
+    ax.set_xlim(-0.5, w - 0.5)
+    ax.set_ylim(h - 0.5, -0.5)
 
     tmp = out.with_suffix(".png")
     out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(tmp, transparent=True, bbox_inches="tight", pad_inches=0)
+    fig.savefig(tmp, transparent=True, pad_inches=0)
     plt.close(fig)
 
     with Image.open(tmp) as img:
@@ -168,17 +206,18 @@ def finite_range(values):
 
 def main():
     manifest = {
-        "schema": 4,
+        "schema": 16,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "model": "ECMWF IFS",
         "data_provider": "ECMWF Open Data",
         "projection": "EPSG:3857",
-        "bounds": {"south": SOUTH, "west": WEST, "north": NORTH, "east": EAST},
+        "requested_bounds": {"south": SOUTH, "west": WEST, "north": NORTH, "east": EAST},
+        "georeferencing": "cell-edge bounds calculated from ECMWF latitude/longitude centres",
+        "rendering": "temperature raster and geopotential contours share identical projected grid",
         "levels": {},
         "status": "ok",
     }
 
-    # Una sola ejecución real del modelo para todas las capas.
     anchor_level = LEVELS[0]
     first = RAW / f"ecmwf_ifs_t_{anchor_level}_f000.grib2"
     first_source, run_dt = retrieve_field("t", anchor_level, 0, first)
@@ -204,17 +243,21 @@ def main():
                 zfile = RAW / f"ecmwf_ifs_z_{level}_f{step:03d}.grib2"
                 zsource, _ = retrieve_field("z", level, step, zfile, run_dt)
 
-                tv, tu = read_field(tfile)
-                zv, zu = read_field(zfile)
+                tv, tu, tb = read_field(tfile)
+                zv, zu, zb = read_field(zfile)
+                if tv.shape != zv.shape or not same_bounds(tb, zb):
+                    raise RuntimeError("Las mallas de temperatura y geopotencial no coinciden")
+
                 tc = temp_c(tv, tu)
                 gh = geopotential_height(zv, zu)
 
                 out = PUBLIC / "ecmwf" / f"{level}hpa_temperature_geopotential" / f"f{step:03d}.webp"
-                render_composite(tc, gh, level, out)
+                render_composite(tc, gh, level, tb, out)
 
                 manifest["levels"][level_key]["steps"][step_key] = {
                     "status": "ok",
                     "image": str(out.relative_to(PUBLIC)).replace(os.sep, "/"),
+                    "bounds": tb,
                     "temperature_units": "°C",
                     "geopotential_height_units": "m",
                     "temperature_range": finite_range(tc),
