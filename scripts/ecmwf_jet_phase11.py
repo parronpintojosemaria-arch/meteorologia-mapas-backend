@@ -178,7 +178,7 @@ def render_jet(speed_kmh, gh_m, bounds, out: Path):
 
 def main():
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "model": "ECMWF IFS",
         "data_provider": "ECMWF Open Data",
@@ -214,8 +214,8 @@ def main():
             zsource, _ = retrieve_field("z", step, zfile, run_dt)
 
             u, _, bounds = read_field(ufile)
-            v, _, vbounds = read_field(vfile)
-            z, zunits, zbounds = read_field(zfile)
+            v, _, _ = read_field(vfile)
+            z, zunits, _ = read_field(zfile)
             if v.shape != u.shape or z.shape != u.shape:
                 raise RuntimeError("Las mallas U/V/Z no tienen la misma forma")
 
@@ -245,9 +245,12 @@ def main():
     elif failures:
         manifest["status"] = "partial"
 
-    (PUBLIC / "manifest-jet.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2)
+    (PUBLIC / f"manifest-jet-{LEVEL}.json").write_text(manifest_text, encoding="utf-8")
+    # Compatibilidad temporal con el visor anterior mientras se despliega la versión multinivel.
+    if LEVEL == 250:
+        (PUBLIC / "manifest-jet.json").write_text(manifest_text, encoding="utf-8")
+
     print(json.dumps(manifest["summary"], ensure_ascii=False))
 
     if successes == 0:
