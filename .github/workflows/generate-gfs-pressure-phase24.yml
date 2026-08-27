@@ -1,0 +1,33 @@
+name: Generar GFS Niveles de Presión Fase 24
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gfs_pressure_phase24.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-gfs-pressure-phase24.yml"
+
+jobs:
+  gfs-fase24:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Generar niveles de presión GFS
+        run: python scripts/gfs_pressure_phase24.py
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase24
+          path: public-gfs24/
+          if-no-files-found: error
+          retention-days: 7
