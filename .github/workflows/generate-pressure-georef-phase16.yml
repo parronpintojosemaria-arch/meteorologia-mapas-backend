@@ -1,0 +1,45 @@
+name: Generar ECMWF Niveles Georreferenciados Fase 16
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ecmwf_pressure_georef_phase16.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-pressure-georef-phase16.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-pressure-georef-fase16:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar niveles ECMWF con límites reales de celda
+        env:
+          PRESSURE_LEVELS: "925,850,700,500,300,250,200"
+          FORECAST_STEPS: "0,12,24"
+        run: python scripts/ecmwf_pressure_georef_phase16.py
+
+      - name: Guardar mapas y manifiesto Fase 16
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-ecmwf-pressure-georef-fase16
+          path: public-pressure16/
+          if-no-files-found: error
+          retention-days: 7
