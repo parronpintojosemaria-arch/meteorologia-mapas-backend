@@ -1,0 +1,45 @@
+name: Generar ECMWF Jet Stream 300 hPa
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ecmwf_jet_phase11.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-jet-300hpa.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-jet-300-fase12:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar ECMWF Jet Stream 300 hPa
+        env:
+          JET_LEVEL: "300"
+          FORECAST_STEPS: "0,12,24"
+        run: python scripts/ecmwf_jet_phase11.py
+
+      - name: Guardar mapas Jet Stream 300 hPa
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-ecmwf-jet-300hpa
+          path: public-jet/
+          if-no-files-found: error
+          retention-days: 7
