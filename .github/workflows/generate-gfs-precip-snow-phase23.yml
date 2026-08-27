@@ -1,0 +1,33 @@
+name: Generar GFS Precipitación y Nieve Fase 23
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gfs_precip_snow_phase23.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-gfs-precip-snow-phase23.yml"
+
+jobs:
+  gfs-fase23:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Generar precipitación acumulada y espesor de nieve GFS
+        run: python scripts/gfs_precip_snow_phase23.py
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase23
+          path: public-gfs23/
+          if-no-files-found: error
+          retention-days: 7
