@@ -97,9 +97,9 @@ def convert_cloud(values, units):
 
 
 def convert_accumulation(values, units):
-    u = (units or "").lower()
-    # ECMWF IFS suele expresar tp/sf en metros de agua equivalente.
-    if u == "m" or "metre" in u or "meter" in u:
+    u = (units or "").lower().strip()
+    # ECMWF IFS puede expresar tp/sf como "m" o "m of water equivalent".
+    if u == "m" or u.startswith("m ") or "metre" in u or "meter" in u:
         return np.maximum(values, 0) * 1000.0, "mm"
     # kg m^-2 equivale numéricamente a mm de agua.
     if "kg" in u and "m" in u:
