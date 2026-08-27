@@ -1,0 +1,33 @@
+name: Generar GFS Temperatura Fase 20
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gfs_temperature_phase20.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-gfs-phase20.yml"
+
+jobs:
+  gfs-fase20:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Generar GFS 2 m
+        run: python scripts/gfs_temperature_phase20.py
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase20
+          path: public-gfs20/
+          if-no-files-found: error
+          retention-days: 7
