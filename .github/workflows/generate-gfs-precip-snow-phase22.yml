@@ -1,0 +1,33 @@
+name: Diagnosticar GFS Precipitación y Nieve Fase 22
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gfs_precip_snow_diagnostic_phase22.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-gfs-precip-snow-phase22.yml"
+
+jobs:
+  gfs-fase22:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Diagnosticar precipitación y nieve GFS
+        run: python scripts/gfs_precip_snow_diagnostic_phase22.py
+      - name: Subir diagnóstico
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-gfs-diagnostico-fase22
+          path: public-gfs22/
+          if-no-files-found: error
+          retention-days: 7
