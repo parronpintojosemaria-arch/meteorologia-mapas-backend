@@ -26,7 +26,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -55,9 +55,21 @@ jobs:
           FORECAST_STEPS: "0,12,24"
         run: python scripts/ecmwf_pressure_levels_phase4.py
 
+      - name: Generar Jet Stream ECMWF 300 hPa
+        env:
+          JET_LEVEL: "300"
+          FORECAST_STEPS: "0,12,24"
+        run: python scripts/ecmwf_jet_phase11.py
+
       - name: Generar Jet Stream ECMWF 250 hPa
         env:
           JET_LEVEL: "250"
+          FORECAST_STEPS: "0,12,24"
+        run: python scripts/ecmwf_jet_phase11.py
+
+      - name: Generar Jet Stream ECMWF 200 hPa
+        env:
+          JET_LEVEL: "200"
           FORECAST_STEPS: "0,12,24"
         run: python scripts/ecmwf_jet_phase11.py
 
