@@ -69,8 +69,11 @@ def download_piece(run_dt, step, level_key, var_key, leftlon, rightlon, target):
     return url
 
 
-def open_single(path):
-    ds = xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
+def open_single(path, filter_by_keys=None):
+    backend_kwargs = {"indexpath": ""}
+    if filter_by_keys:
+        backend_kwargs["filter_by_keys"] = filter_by_keys
+    ds = xr.open_dataset(path, engine="cfgrib", backend_kwargs=backend_kwargs)
     if not ds.data_vars:
         raise RuntimeError(f"GRIB sin variables: {path.name}")
     da = ds[list(ds.data_vars)[0]]
@@ -103,12 +106,15 @@ def join_west_east(west_da, east_da):
     return values, da.attrs.get("units", ""), bounds
 
 
-def retrieve_field(run_dt, step, level_key, var_key, prefix):
+def retrieve_field(run_dt, step, level_key, var_key, prefix, filter_by_keys=None):
     west_file = RAW / f"{prefix}_{run_dt:%Y%m%d%H}_f{step:03d}_west.grib2"
     east_file = RAW / f"{prefix}_{run_dt:%Y%m%d%H}_f{step:03d}_east.grib2"
     url_w = download_piece(run_dt, step, level_key, var_key, 335, 359.999, west_file)
     url_e = download_piece(run_dt, step, level_key, var_key, 0, 45, east_file)
-    values, units, bounds = join_west_east(open_single(west_file), open_single(east_file))
+    values, units, bounds = join_west_east(
+        open_single(west_file, filter_by_keys),
+        open_single(east_file, filter_by_keys),
+    )
     return values, units, bounds, [url_w, url_e]
 
 
@@ -160,7 +166,14 @@ def lock_run():
     for run_dt in candidate_runs():
         try:
             retrieve_field(run_dt, 0, "lev_10_m_above_ground", "var_UGRD", "gfs_u10")
-            retrieve_field(run_dt, 0, "lev_entire_atmosphere", "var_TCDC", "gfs_tcc")
+            retrieve_field(
+                run_dt,
+                0,
+                "lev_entire_atmosphere",
+                "var_TCDC",
+                "gfs_tcc",
+                filter_by_keys={"stepType": "instant"},
+            )
             return run_dt
         except Exception as exc:
             errors.append(f"{run_dt.isoformat()}: {exc}")
@@ -181,7 +194,7 @@ def main():
         "georeferencing": "cell-edge bounds calculated from GFS latitude/longitude centres",
         "variables": {
             "wind_10m": {"units": "km/h", "note": "Velocidad derivada de U/V oficiales GFS a 10 m."},
-            "cloud_cover_total": {"units": "%", "note": "Nubosidad total GFS para toda la atmósfera."},
+            "cloud_cover_total": {"units": "%", "note": "Nubosidad total instantánea GFS para toda la atmósfera."},
         },
         "steps": {},
         "status": "ok",
@@ -215,7 +228,14 @@ def main():
             failures += 1
 
         try:
-            cloud, units, cb, curls = retrieve_field(run_dt, step, "lev_entire_atmosphere", "var_TCDC", "gfs_tcc")
+            cloud, units, cb, curls = retrieve_field(
+                run_dt,
+                step,
+                "lev_entire_atmosphere",
+                "var_TCDC",
+                "gfs_tcc",
+                filter_by_keys={"stepType": "instant"},
+            )
             if units and "%" not in units and "percent" not in units.lower():
                 raise RuntimeError(f"Unidades inesperadas para TCDC: {units}")
             cloud = np.clip(cloud, 0, 100)
@@ -228,6 +248,7 @@ def main():
                 "range": finite_range(cloud),
                 "source": "NOAA/NCEP NOMADS GFS filter",
                 "source_requests": curls,
+                "step_type": "instant",
             }
             successes += 1
         except Exception as exc:
@@ -242,6 +263,9 @@ def main():
 
     (PUBLIC / "manifest-gfs21.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(manifest["summary"], ensure_ascii=False))
+
+    if failures:
+        raise RuntimeError(f"Fase 21 incompleta: {successes} éxitos, {failures} fallos")
     if successes == 0:
         raise RuntimeError("Fase 21 sin mapas GFS válidos")
 
