@@ -1,0 +1,90 @@
+name: Fase 27 · Horizonte ECMWF y GFS 72h
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gfs_horizon_phase27.py"
+      - "scripts/validate_horizon_phase27.py"
+      - ".github/workflows/generate-horizon-phase27.yml"
+
+jobs:
+  ecmwf-horizonte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: ECMWF superficie +48/+72
+        env:
+          FORECAST_STEPS: "48,72"
+        run: python scripts/ecmwf_surface_phase2.py
+      - name: ECMWF niveles +48/+72
+        env:
+          PRESSURE_LEVELS: "925,850,700,500,300,250,200"
+          FORECAST_STEPS: "48,72"
+        run: python scripts/ecmwf_pressure_levels_phase4.py
+      - name: ECMWF Jet 300 +48/+72
+        env:
+          JET_LEVEL: "300"
+          FORECAST_STEPS: "48,72"
+        run: python scripts/ecmwf_jet_phase11.py
+      - name: ECMWF Jet 250 +48/+72
+        env:
+          JET_LEVEL: "250"
+          FORECAST_STEPS: "48,72"
+        run: python scripts/ecmwf_jet_phase11.py
+      - name: ECMWF Jet 200 +48/+72
+        env:
+          JET_LEVEL: "200"
+          FORECAST_STEPS: "48,72"
+        run: python scripts/ecmwf_jet_phase11.py
+      - name: Validar 30 mapas ECMWF
+        run: python scripts/validate_horizon_phase27.py ecmwf
+      - name: Subir artefacto ECMWF
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-ecmwf-fase27-72h
+          path: |
+            public/
+            public-pressure/
+            public-jet/
+          if-no-files-found: error
+          retention-days: 7
+
+  gfs-horizonte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: GFS completo +48/+72
+        run: python scripts/gfs_horizon_phase27.py
+      - name: Validar 30 mapas GFS
+        run: python scripts/validate_horizon_phase27.py gfs
+      - name: Subir artefacto GFS
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase27-72h
+          path: public-gfs27/
+          if-no-files-found: error
+          retention-days: 7
