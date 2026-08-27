@@ -2,6 +2,14 @@ name: Publicar ECMWF en GitHub Pages
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/ecmwf_surface_phase2.py"
+      - "scripts/ecmwf_pressure_levels_phase4.py"
+      - "requirements.txt"
+      - ".github/workflows/publish-ecmwf-pages.yml"
   schedule:
     - cron: "45 4,10,16,22 * * *"
 
