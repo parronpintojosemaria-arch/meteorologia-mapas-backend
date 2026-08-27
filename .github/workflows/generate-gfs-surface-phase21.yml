@@ -1,0 +1,33 @@
+name: Generar GFS Superficie Fase 21
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/gfs_surface_phase21.py"
+      - "requirements.txt"
+      - ".github/workflows/generate-gfs-surface-phase21.yml"
+
+jobs:
+  gfs-fase21:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Generar viento y nubosidad GFS
+        run: python scripts/gfs_surface_phase21.py
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase21
+          path: public-gfs21/
+          if-no-files-found: error
+          retention-days: 7
