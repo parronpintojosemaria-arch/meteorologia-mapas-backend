@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "scripts/**"
+      - "scripts/ecmwf_surface_phase2.py"
       - "requirements.txt"
       - ".github/workflows/generate-maps.yml"
   schedule:
