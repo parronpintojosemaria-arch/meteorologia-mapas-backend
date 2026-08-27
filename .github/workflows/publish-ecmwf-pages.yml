@@ -50,7 +50,7 @@ jobs:
 
       - name: Generar niveles ECMWF
         env:
-          PRESSURE_LEVELS: "850,700,500,300,200"
+          PRESSURE_LEVELS: "925,850,700,500,300,250,200"
           FORECAST_STEPS: "0,12,24"
         run: python scripts/ecmwf_pressure_levels_phase4.py
 
