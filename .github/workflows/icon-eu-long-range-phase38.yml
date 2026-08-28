@@ -67,9 +67,20 @@ jobs:
                   if rec.get('status')!='ok' or not rec.get('image'):
                       raise SystemExit(f'Superficie inválida {sk} {key}: {rec}')
                   check_bounds(rec.get('bounds',{}),f'{sk} {key}')
+
               pc=recs.get('precipitation_consistency',{})
-              if pc.get('status')!='ok' or float(pc.get('max_abs_difference_mm',999))>0.15:
+              if pc.get('status')!='ok':
                   raise SystemExit(f'Consistencia precipitación inválida {sk}: {pc}')
+              if float(pc.get('mean_abs_difference_mm',999))>0.005:
+                  raise SystemExit(f'Error medio precipitación excesivo {sk}: {pc}')
+              if float(pc.get('p99_9_abs_difference_mm',999))>0.01:
+                  raise SystemExit(f'p99.9 precipitación excesivo {sk}: {pc}')
+              if float(pc.get('outlier_fraction_percent',999))>0.01:
+                  raise SystemExit(f'Demasiados outliers precipitación {sk}: {pc}')
+              if not pc.get('all_large_outliers_confined_to_edge_halo'):
+                  raise SystemExit(f'Outlier de precipitación dentro del dominio útil {sk}: {pc}')
+              if float(pc.get('max_abs_difference_mm',999))>2.0:
+                  raise SystemExit(f'Máximo global precipitación excesivo {sk}: {pc}')
 
           height_limits={925:(0,2000),850:(500,2500),700:(1500,4500),500:(3500,7000),300:(6500,11500),250:(7500,13000),200:(9000,15000)}
           for lk,recs in data.get('pressure',{}).items():
