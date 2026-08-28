@@ -1,4 +1,4 @@
-name: Publicar ECMWF y GFS en GitHub Pages · horizonte completo
+name: Publicar ECMWF y GFS en GitHub Pages · horizonte completo + precipitación
 
 on:
   workflow_dispatch:
@@ -8,6 +8,8 @@ on:
       - "site/index.html"
       - "scripts/timeline_phase29.py"
       - "scripts/max_horizon_phase28.py"
+      - "scripts/precip_type_intensity_phase30.py"
+      - "scripts/precip_timeline_phase32.py"
       - "scripts/ecmwf_surface_phase2.py"
       - "scripts/ecmwf_pressure_levels_phase4.py"
       - "scripts/ecmwf_jet_phase11.py"
@@ -27,8 +29,10 @@ permissions:
   id-token: write
 
 env:
-  EXPECTED_ECMWF: "223"
-  EXPECTED_GFS: "239"
+  EXPECTED_ECMWF_MAIN: "223"
+  EXPECTED_GFS_MAIN: "239"
+  EXPECTED_ECMWF_PRECIP: "36"
+  EXPECTED_GFS_PRECIP: "38"
 
 concurrency:
   group: pages
@@ -37,7 +41,7 @@ concurrency:
 jobs:
   ecmwf-timeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,35 +54,49 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Generar ECMWF hasta +360 h
+      - name: Generar ECMWF principal hasta +360 h
         run: python scripts/timeline_phase29.py ecmwf
-      - name: Validar ECMWF completo
+      - name: Generar ECMWF tipo e intensidad hasta +360 h
+        run: python scripts/precip_timeline_phase32.py ecmwf
+      - name: Validar ECMWF completo y mismo ciclo
         run: |
           python - <<'PY'
-          import json, os
+          import json, os, shutil
           from pathlib import Path
-          base=Path('public-phase29/ecmwf')
-          data=json.loads((base/'manifest-phase29-ecmwf.json').read_text(encoding='utf-8'))
-          expected=int(os.environ['EXPECTED_ECMWF'])
-          summary=data.get('summary',{})
-          files=list(base.rglob('*.webp'))
-          if data.get('status')!='ok' or data.get('horizon_hours')!=360:
-              raise SystemExit(f'ECMWF inválido: status={data.get("status")} horizonte={data.get("horizon_hours")}')
-          if summary.get('successes')!=expected or summary.get('failures')!=0 or len(files)!=expected:
-              raise SystemExit(f'ECMWF incompleto: {summary}, webp={len(files)}')
-          print('ECMWF validado:', summary)
+          main_base=Path('public-phase29/ecmwf')
+          precip_base=Path('public-phase30/ecmwf')
+          main=json.loads((main_base/'manifest-phase29-ecmwf.json').read_text(encoding='utf-8'))
+          precip=json.loads((precip_base/'manifest-phase30-ecmwf.json').read_text(encoding='utf-8'))
+          p32=json.loads((precip_base/'manifest-phase32-ecmwf.json').read_text(encoding='utf-8'))
+          em=int(os.environ['EXPECTED_ECMWF_MAIN']); ep=int(os.environ['EXPECTED_ECMWF_PRECIP'])
+          if main.get('status')!='ok' or main.get('horizon_hours')!=360:
+              raise SystemExit(f'ECMWF principal inválido: {main.get("status")} / {main.get("horizon_hours")}')
+          if main.get('summary',{}).get('successes')!=em or main.get('summary',{}).get('failures')!=0:
+              raise SystemExit(f'ECMWF principal incompleto: {main.get("summary")}')
+          if precip.get('status')!='ok' or precip.get('summary',{}).get('successes')!=ep or precip.get('summary',{}).get('failures')!=0:
+              raise SystemExit(f'ECMWF precipitación incompleta: {precip.get("summary")}')
+          if p32.get('status')!='ok' or p32.get('horizon_hours')!=360 or p32.get('summary',{}).get('successes')!=ep:
+              raise SystemExit(f'ECMWF Fase 32 inválida: {p32}')
+          if main.get('run_utc')!=precip.get('run_utc') or main.get('run_utc')!=p32.get('run_utc'):
+              raise SystemExit(f'ECMWF mezcla ciclos: main={main.get("run_utc")} precip={precip.get("run_utc")} p32={p32.get("run_utc")}')
+          if len(list(main_base.rglob('*.webp')))!=em or len(list(precip_base.rglob('*.webp')))!=ep:
+              raise SystemExit('ECMWF: número de WebP inesperado')
+          stage=Path('pages/ecmwf'); stage.mkdir(parents=True,exist_ok=True)
+          shutil.copytree(main_base,stage,dirs_exist_ok=True)
+          shutil.copytree(precip_base,stage,dirs_exist_ok=True)
+          print('ECMWF validado:', em, '+', ep, 'mapas · ciclo', main.get('run_utc'))
           PY
       - name: Subir ECMWF
         uses: actions/upload-artifact@v4
         with:
           name: pages-ecmwf-timeline
-          path: public-phase29/ecmwf/
+          path: pages/ecmwf/
           if-no-files-found: error
           retention-days: 2
 
   gfs-timeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -91,29 +109,43 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Generar GFS hasta +384 h
+      - name: Generar GFS principal hasta +384 h
         run: python scripts/timeline_phase29.py gfs
-      - name: Validar GFS completo
+      - name: Generar GFS tipo e intensidad hasta +384 h
+        run: python scripts/precip_timeline_phase32.py gfs
+      - name: Validar GFS completo y mismo ciclo
         run: |
           python - <<'PY'
-          import json, os
+          import json, os, shutil
           from pathlib import Path
-          base=Path('public-phase29/gfs')
-          data=json.loads((base/'manifest-phase29-gfs.json').read_text(encoding='utf-8'))
-          expected=int(os.environ['EXPECTED_GFS'])
-          summary=data.get('summary',{})
-          files=list(base.rglob('*.webp'))
-          if data.get('status')!='ok' or data.get('horizon_hours')!=384:
-              raise SystemExit(f'GFS inválido: status={data.get("status")} horizonte={data.get("horizon_hours")}')
-          if summary.get('successes')!=expected or summary.get('failures')!=0 or len(files)!=expected:
-              raise SystemExit(f'GFS incompleto: {summary}, webp={len(files)}')
-          print('GFS validado:', summary)
+          main_base=Path('public-phase29/gfs')
+          precip_base=Path('public-phase30/gfs')
+          main=json.loads((main_base/'manifest-phase29-gfs.json').read_text(encoding='utf-8'))
+          precip=json.loads((precip_base/'manifest-phase30-gfs.json').read_text(encoding='utf-8'))
+          p32=json.loads((precip_base/'manifest-phase32-gfs.json').read_text(encoding='utf-8'))
+          gm=int(os.environ['EXPECTED_GFS_MAIN']); gp=int(os.environ['EXPECTED_GFS_PRECIP'])
+          if main.get('status')!='ok' or main.get('horizon_hours')!=384:
+              raise SystemExit(f'GFS principal inválido: {main.get("status")} / {main.get("horizon_hours")}')
+          if main.get('summary',{}).get('successes')!=gm or main.get('summary',{}).get('failures')!=0:
+              raise SystemExit(f'GFS principal incompleto: {main.get("summary")}')
+          if precip.get('status')!='ok' or precip.get('summary',{}).get('successes')!=gp or precip.get('summary',{}).get('failures')!=0:
+              raise SystemExit(f'GFS precipitación incompleta: {precip.get("summary")}')
+          if p32.get('status')!='ok' or p32.get('horizon_hours')!=384 or p32.get('summary',{}).get('successes')!=gp:
+              raise SystemExit(f'GFS Fase 32 inválida: {p32}')
+          if main.get('run_utc')!=precip.get('run_utc') or main.get('run_utc')!=p32.get('run_utc'):
+              raise SystemExit(f'GFS mezcla ciclos: main={main.get("run_utc")} precip={precip.get("run_utc")} p32={p32.get("run_utc")}')
+          if len(list(main_base.rglob('*.webp')))!=gm or len(list(precip_base.rglob('*.webp')))!=gp:
+              raise SystemExit('GFS: número de WebP inesperado')
+          stage=Path('pages/gfs'); stage.mkdir(parents=True,exist_ok=True)
+          shutil.copytree(main_base,stage,dirs_exist_ok=True)
+          shutil.copytree(precip_base,stage,dirs_exist_ok=True)
+          print('GFS validado:', gm, '+', gp, 'mapas · ciclo', main.get('run_utc'))
           PY
       - name: Subir GFS
         uses: actions/upload-artifact@v4
         with:
           name: pages-gfs-timeline
-          path: public-phase29/gfs/
+          path: pages/gfs/
           if-no-files-found: error
           retention-days: 2
 
@@ -139,18 +171,27 @@ jobs:
         with:
           name: pages-gfs-timeline
           path: _site/gfs
-      - name: Validar paquete web
+      - name: Validar paquete web completo
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
           root=Path('_site')
-          configs=[('ecmwf','manifest-phase29-ecmwf.json',360,int(os.environ['EXPECTED_ECMWF'])),('gfs','manifest-phase29-gfs.json',384,int(os.environ['EXPECTED_GFS']))]
-          for folder,name,horizon,expected in configs:
+          configs=[
+              ('ecmwf','manifest-phase29-ecmwf.json','manifest-phase30-ecmwf.json','manifest-phase32-ecmwf.json',360,int(os.environ['EXPECTED_ECMWF_MAIN']),int(os.environ['EXPECTED_ECMWF_PRECIP'])),
+              ('gfs','manifest-phase29-gfs.json','manifest-phase30-gfs.json','manifest-phase32-gfs.json',384,int(os.environ['EXPECTED_GFS_MAIN']),int(os.environ['EXPECTED_GFS_PRECIP']))
+          ]
+          for folder,main_name,precip_name,p32_name,horizon,expected_main,expected_precip in configs:
               base=root/folder
-              data=json.loads((base/name).read_text(encoding='utf-8'))
-              if data.get('status')!='ok' or data.get('horizon_hours')!=horizon:
-                  raise SystemExit(f'{folder}: manifiesto no válido')
+              main=json.loads((base/main_name).read_text(encoding='utf-8'))
+              precip=json.loads((base/precip_name).read_text(encoding='utf-8'))
+              p32=json.loads((base/p32_name).read_text(encoding='utf-8'))
+              if main.get('status')!='ok' or main.get('horizon_hours')!=horizon:
+                  raise SystemExit(f'{folder}: principal no válido')
+              if precip.get('status')!='ok' or p32.get('status')!='ok' or p32.get('horizon_hours')!=horizon:
+                  raise SystemExit(f'{folder}: precipitación no válida')
+              if not (main.get('run_utc')==precip.get('run_utc')==p32.get('run_utc')):
+                  raise SystemExit(f'{folder}: ciclos mezclados')
               images=[]
               def walk(x):
                   if isinstance(x,dict):
@@ -158,13 +199,14 @@ jobs:
                       for v in x.values(): walk(v)
                   elif isinstance(x,list):
                       for v in x: walk(v)
-              walk(data)
+              walk(main); walk(precip)
+              expected=expected_main+expected_precip
               if len(images)!=expected:
                   raise SystemExit(f'{folder}: referencias={len(images)}, esperado={expected}')
               missing=[p for p in images if not (root/p).is_file()]
               if missing:
                   raise SystemExit(f'{folder}: faltan imágenes: {missing[:3]}')
-              print(folder, 'ok', len(images), 'mapas')
+              print(folder,'ok',expected,'mapas · ciclo',main.get('run_utc'))
           PY
       - name: Añadir visor
         run: |
