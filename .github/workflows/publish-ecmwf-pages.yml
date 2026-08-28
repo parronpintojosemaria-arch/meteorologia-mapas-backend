@@ -1,11 +1,13 @@
-name: Publicar ECMWF y GFS en GitHub Pages · 72h
+name: Publicar ECMWF y GFS en GitHub Pages · horizonte completo
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - "site/**"
+      - "site/index.html"
+      - "scripts/timeline_phase29.py"
+      - "scripts/max_horizon_phase28.py"
       - "scripts/ecmwf_surface_phase2.py"
       - "scripts/ecmwf_pressure_levels_phase4.py"
       - "scripts/ecmwf_jet_phase11.py"
@@ -14,8 +16,6 @@ on:
       - "scripts/gfs_precip_snow_phase23.py"
       - "scripts/gfs_pressure_phase24.py"
       - "scripts/gfs_jet_phase25.py"
-      - "scripts/gfs_extend_public_phase27.py"
-      - "scripts/validate_horizon_phase27.py"
       - "requirements.txt"
       - ".github/workflows/publish-ecmwf-pages.yml"
   schedule:
@@ -26,160 +26,156 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  EXPECTED_ECMWF: "223"
+  EXPECTED_GFS: "239"
+
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  ecmwf-timeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 110
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
+    timeout-minutes: 70
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
-
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Generar superficie ECMWF hasta +72 h
-        env:
-          FORECAST_STEPS: "0,3,6,9,12,18,24,48,72"
-        run: python scripts/ecmwf_surface_phase2.py
-
-      - name: Generar niveles ECMWF hasta +72 h
-        env:
-          PRESSURE_LEVELS: "925,850,700,500,300,250,200"
-          FORECAST_STEPS: "0,12,24,48,72"
-        run: python scripts/ecmwf_pressure_levels_phase4.py
-
-      - name: Generar Jet Stream ECMWF 300 hPa hasta +72 h
-        env:
-          JET_LEVEL: "300"
-          FORECAST_STEPS: "0,12,24,48,72"
-        run: python scripts/ecmwf_jet_phase11.py
-
-      - name: Generar Jet Stream ECMWF 250 hPa hasta +72 h
-        env:
-          JET_LEVEL: "250"
-          FORECAST_STEPS: "0,12,24,48,72"
-        run: python scripts/ecmwf_jet_phase11.py
-
-      - name: Generar Jet Stream ECMWF 200 hPa hasta +72 h
-        env:
-          JET_LEVEL: "200"
-          FORECAST_STEPS: "0,12,24,48,72"
-        run: python scripts/ecmwf_jet_phase11.py
-
-      - name: Validar horizonte ECMWF +48/+72
-        run: python scripts/validate_horizon_phase27.py ecmwf
-
-      - name: Generar temperatura GFS base
-        run: python scripts/gfs_temperature_phase20.py
-
-      - name: Generar viento y nubosidad GFS base
-        run: python scripts/gfs_surface_phase21.py
-
-      - name: Generar precipitación y nieve en suelo GFS base
-        run: python scripts/gfs_precip_snow_phase23.py
-
-      - name: Generar niveles GFS base
-        run: python scripts/gfs_pressure_phase24.py
-
-      - name: Generar Jet Stream GFS base
-        run: python scripts/gfs_jet_phase25.py
-
-      - name: Validar coherencia GFS base
+      - name: Generar ECMWF hasta +360 h
+        run: python scripts/timeline_phase29.py ecmwf
+      - name: Validar ECMWF completo
         run: |
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-
-          files = [
-              ("public-gfs20/manifest-gfs20.json", 3),
-              ("public-gfs21/manifest-gfs21.json", 6),
-              ("public-gfs23/manifest-gfs23.json", 6),
-              ("public-gfs24/manifest-gfs-pressure24.json", 21),
-              ("public-gfs25/manifest-gfs-jet25.json", 9),
-          ]
-          runs = set()
-          for filename, expected in files:
-              data = json.loads(Path(filename).read_text(encoding="utf-8"))
-              summary = data.get("summary", {})
-              successes = int(summary.get("successes", -1))
-              failures = int(summary.get("failures", -1))
-              if data.get("status") != "ok" or successes != expected or failures != 0:
-                  raise SystemExit(f"GFS inválido en {filename}: status={data.get('status')} summary={summary}")
-              runs.add(str(data.get("run_utc", "")))
-          if "" in runs or len(runs) != 1:
-              raise SystemExit(f"Los módulos GFS no comparten la misma ejecución: {sorted(runs)}")
-          print("GFS base coherente y completo:", next(iter(runs)))
+          base=Path('public-phase29/ecmwf')
+          data=json.loads((base/'manifest-phase29-ecmwf.json').read_text(encoding='utf-8'))
+          expected=int(os.environ['EXPECTED_ECMWF'])
+          summary=data.get('summary',{})
+          files=list(base.rglob('*.webp'))
+          if data.get('status')!='ok' or data.get('horizon_hours')!=360:
+              raise SystemExit(f'ECMWF inválido: status={data.get("status")} horizonte={data.get("horizon_hours")}')
+          if summary.get('successes')!=expected or summary.get('failures')!=0 or len(files)!=expected:
+              raise SystemExit(f'ECMWF incompleto: {summary}, webp={len(files)}')
+          print('ECMWF validado:', summary)
           PY
+      - name: Subir ECMWF
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-ecmwf-timeline
+          path: public-phase29/ecmwf/
+          if-no-files-found: error
+          retention-days: 2
 
-      - name: Extender GFS público hasta +72 h
-        run: python scripts/gfs_extend_public_phase27.py
-
-      - name: Validar GFS completo hasta +72 h
+  gfs-timeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar GFS hasta +384 h
+        run: python scripts/timeline_phase29.py gfs
+      - name: Validar GFS completo
         run: |
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-
-          files = [
-              ("public-gfs20/manifest-gfs20.json", 5),
-              ("public-gfs21/manifest-gfs21.json", 10),
-              ("public-gfs23/manifest-gfs23.json", 10),
-              ("public-gfs24/manifest-gfs-pressure24.json", 35),
-              ("public-gfs25/manifest-gfs-jet25.json", 15),
-          ]
-          runs = set()
-          for filename, expected in files:
-              data = json.loads(Path(filename).read_text(encoding="utf-8"))
-              summary = data.get("summary", {})
-              successes = int(summary.get("successes", -1))
-              failures = int(summary.get("failures", -1))
-              if data.get("status") != "ok" or successes != expected or failures != 0:
-                  raise SystemExit(f"GFS 72h inválido en {filename}: status={data.get('status')} summary={summary}")
-              if int(data.get("horizon_hours", 0)) != 72:
-                  raise SystemExit(f"Falta horizonte 72h en {filename}")
-              runs.add(str(data.get("run_utc", "")))
-          if "" in runs or len(runs) != 1:
-              raise SystemExit(f"Los módulos GFS 72h no comparten la misma ejecución: {sorted(runs)}")
-          print("GFS coherente hasta +72 h:", next(iter(runs)))
+          base=Path('public-phase29/gfs')
+          data=json.loads((base/'manifest-phase29-gfs.json').read_text(encoding='utf-8'))
+          expected=int(os.environ['EXPECTED_GFS'])
+          summary=data.get('summary',{})
+          files=list(base.rglob('*.webp'))
+          if data.get('status')!='ok' or data.get('horizon_hours')!=384:
+              raise SystemExit(f'GFS inválido: status={data.get("status")} horizonte={data.get("horizon_hours")}')
+          if summary.get('successes')!=expected or summary.get('failures')!=0 or len(files)!=expected:
+              raise SystemExit(f'GFS incompleto: {summary}, webp={len(files)}')
+          print('GFS validado:', summary)
           PY
+      - name: Subir GFS
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-gfs-timeline
+          path: public-phase29/gfs/
+          if-no-files-found: error
+          retention-days: 2
 
-      - name: Preparar web estática
+  deploy:
+    needs: [ecmwf-timeline, gfs-timeline]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Preparar directorios
+        run: mkdir -p _site/ecmwf _site/gfs
+      - name: Descargar ECMWF
+        uses: actions/download-artifact@v4
+        with:
+          name: pages-ecmwf-timeline
+          path: _site/ecmwf
+      - name: Descargar GFS
+        uses: actions/download-artifact@v4
+        with:
+          name: pages-gfs-timeline
+          path: _site/gfs
+      - name: Validar paquete web
         run: |
-          rm -rf _site
-          mkdir -p _site
-          cp -R public/. _site/
-          cp -R public-pressure/. _site/
-          cp -R public-jet/. _site/
-          cp -R public-gfs20/. _site/
-          cp -R public-gfs21/. _site/
-          cp -R public-gfs23/. _site/
-          cp -R public-gfs24/. _site/
-          cp -R public-gfs25/. _site/
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path('_site')
+          configs=[('ecmwf','manifest-phase29-ecmwf.json',360,int(os.environ['EXPECTED_ECMWF'])),('gfs','manifest-phase29-gfs.json',384,int(os.environ['EXPECTED_GFS']))]
+          for folder,name,horizon,expected in configs:
+              base=root/folder
+              data=json.loads((base/name).read_text(encoding='utf-8'))
+              if data.get('status')!='ok' or data.get('horizon_hours')!=horizon:
+                  raise SystemExit(f'{folder}: manifiesto no válido')
+              images=[]
+              def walk(x):
+                  if isinstance(x,dict):
+                      if x.get('status')=='ok' and x.get('image'): images.append(x['image'])
+                      for v in x.values(): walk(v)
+                  elif isinstance(x,list):
+                      for v in x: walk(v)
+              walk(data)
+              if len(images)!=expected:
+                  raise SystemExit(f'{folder}: referencias={len(images)}, esperado={expected}')
+              missing=[p for p in images if not (root/p).is_file()]
+              if missing:
+                  raise SystemExit(f'{folder}: faltan imágenes: {missing[:3]}')
+              print(folder, 'ok', len(images), 'mapas')
+          PY
+      - name: Añadir visor
+        run: |
           cp site/index.html _site/index.html
           touch _site/.nojekyll
-
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
-
       - name: Subir web de Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-
       - name: Publicar
         id: deployment
         uses: actions/deploy-pages@v4
