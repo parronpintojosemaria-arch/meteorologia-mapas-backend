@@ -1,0 +1,78 @@
+name: Fase 41 · ICON-EU niveles y Jet completos +120 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_aloft_timeline_phase41.py'
+      - '.github/workflows/icon-eu-aloft-timeline-phase41.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-aloft-timeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validar 20 campos x 93 pasos
+        run: python scripts/icon_eu_aloft_timeline_phase41.py
+
+      - name: Validar Fase 41 1860/1860
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p=Path('public-icon41/icon-eu/manifest-icon-eu41.json')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          expected_steps=list(range(0,79))+list(range(81,121,3))
+          levels=[925,850,700,500,300,250,200]
+          jet=[300,250,200]
+
+          if data.get('status')!='ok':
+              raise SystemExit(f'Fase 41 no válida: {data.get("failure_notes",[])[:12]}')
+          if data.get('expected_steps') != expected_steps or data.get('expected_step_count') != 93:
+              raise SystemExit('Calendario temporal de Fase 41 incorrecto')
+          if data.get('pressure_levels_hpa') != levels or data.get('jet_levels_hpa') != jet:
+              raise SystemExit('Niveles de presión/Jet inesperados')
+          if s.get('field_count') != 20 or s.get('steps_per_field') != 93:
+              raise SystemExit(f'Resumen inesperado: {s}')
+          if s.get('successes') != 1860 or s.get('expected') != 1860 or s.get('failures') != 0:
+              raise SystemExit(f'Fase 41 no llega a 1860/1860: {s}')
+
+          required=set()
+          for lev in levels:
+              required.add(f'temperature_{lev}hpa')
+              required.add(f'geopotential_{lev}hpa')
+          for lev in jet:
+              required.add(f'jet_u_{lev}hpa')
+              required.add(f'jet_v_{lev}hpa')
+          if set(data.get('fields',{})) != required:
+              raise SystemExit(f'Campos inesperados: {set(data.get("fields",{})) ^ required}')
+
+          for key, rec in data['fields'].items():
+              if rec.get('status')!='ok' or rec.get('published_step_count_0_120')!=93:
+                  raise SystemExit(f'Campo incompleto {key}: {rec}')
+              if rec.get('missing_expected_steps') or rec.get('unexpected_steps_0_120'):
+                  raise SystemExit(f'Calendario distinto {key}: {rec}')
+
+          print('ICON-EU Fase 41 validada:',s,'run',data.get('run_utc'))
+          PY
+
+      - name: Subir diagnóstico Fase 41
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase41
+          path: public-icon41/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
