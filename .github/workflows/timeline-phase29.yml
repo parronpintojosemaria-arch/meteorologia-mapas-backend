@@ -1,0 +1,84 @@
+name: Fase 29 · Línea temporal inteligente ECMWF y GFS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/timeline_phase29.py"
+      - ".github/workflows/timeline-phase29.yml"
+
+jobs:
+  ecmwf-timeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar línea temporal ECMWF hasta +360 h
+        run: python scripts/timeline_phase29.py ecmwf
+      - name: Verificar manifiesto ECMWF
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('public-phase29/ecmwf/manifest-phase29-ecmwf.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          s=d['summary']
+          if d.get('status')!='ok' or s.get('successes')!=s.get('expected') or s.get('failures')!=0 or d.get('horizon_hours')!=360:
+              raise SystemExit(f'ECMWF Fase 29 inválida: {d.get("status")} {s}')
+          print('ECMWF Fase 29:', s)
+          PY
+      - name: Subir artefacto ECMWF
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-ecmwf-fase29-timeline360
+          path: public-phase29/ecmwf/
+          if-no-files-found: error
+          retention-days: 7
+
+  gfs-timeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar línea temporal GFS hasta +384 h
+        run: python scripts/timeline_phase29.py gfs
+      - name: Verificar manifiesto GFS
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('public-phase29/gfs/manifest-phase29-gfs.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          s=d['summary']
+          if d.get('status')!='ok' or s.get('successes')!=s.get('expected') or s.get('failures')!=0 or d.get('horizon_hours')!=384:
+              raise SystemExit(f'GFS Fase 29 inválida: {d.get("status")} {s}')
+          print('GFS Fase 29:', s)
+          PY
+      - name: Subir artefacto GFS
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase29-timeline384
+          path: public-phase29/gfs/
+          if-no-files-found: error
+          retention-days: 7
