@@ -1,0 +1,156 @@
+name: Aplicar marca personal a generadores de mapas
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-map-branding.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-branding:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Aplicar firma a todos los renderizadores WebP
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('scripts')
+          changed = []
+          save_sites = 0
+
+          for path in sorted(root.glob('*.py')):
+              if path.name == 'map_branding.py':
+                  continue
+              text = path.read_text(encoding='utf-8')
+              # Solo scripts que realmente escriben mapas WebP.
+              if 'WEBP' not in text and '.webp' not in text:
+                  continue
+              if '.save(' not in text and '.savefig(' not in text:
+                  continue
+
+              original = text
+              lines = text.splitlines()
+              out = []
+              needs_import = False
+
+              for line in lines:
+                  # Caso compacto: Image.fromarray(...).save(out, "WEBP", ...)
+                  m = re.match(r'^(?P<indent>\s*)Image\.fromarray\((?P<imgargs>.*)\)\.save\((?P<saveargs>.*)\)\s*$', line)
+                  if m and 'WEBP' in m.group('saveargs').upper():
+                      indent = m.group('indent')
+                      imgargs = m.group('imgargs')
+                      saveargs = m.group('saveargs')
+                      path_expr = saveargs.split(',', 1)[0].strip()
+                      out.append(f"{indent}_brand_img = brand_image(Image.fromarray({imgargs}), {path_expr})")
+                      out.append(f"{indent}_brand_img.save({saveargs})")
+                      needs_import = True
+                      save_sites += 1
+                      continue
+
+                  # Caso normal: img.save(out, "WEBP", ...)
+                  m = re.match(r'^(?P<indent>\s*)(?P<var>[A-Za-z_]\w*)\.save\((?P<saveargs>.*)\)\s*$', line)
+                  if m and 'WEBP' in m.group('saveargs').upper():
+                      indent = m.group('indent')
+                      var = m.group('var')
+                      saveargs = m.group('saveargs')
+                      path_expr = saveargs.split(',', 1)[0].strip()
+                      if not (out and 'brand_image(' in out[-1]):
+                          out.append(f"{indent}{var} = brand_image({var}, {path_expr})")
+                      out.append(line)
+                      needs_import = True
+                      save_sites += 1
+                      continue
+
+                  # Figuras Matplotlib guardadas como WebP o en un script WebP.
+                  m = re.match(r'^(?P<indent>\s*)(?P<var>[A-Za-z_]\w*)\.savefig\((?P<saveargs>.*)\)\s*$', line)
+                  if m:
+                      indent = m.group('indent')
+                      var = m.group('var')
+                      saveargs = m.group('saveargs')
+                      path_expr = saveargs.split(',', 1)[0].strip()
+                      out.append(f"{indent}brand_figure({var}, {path_expr})")
+                      out.append(line)
+                      needs_import = True
+                      save_sites += 1
+                      continue
+
+                  out.append(line)
+
+              text = '\n'.join(out) + ('\n' if original.endswith('\n') else '')
+
+              if needs_import and 'from map_branding import brand_image, brand_figure' not in text:
+                  marker = 'from PIL import Image\n'
+                  if marker in text:
+                      text = text.replace(marker, marker + 'from map_branding import brand_image, brand_figure\n', 1)
+                  else:
+                      # Inserción segura tras future import para scripts Matplotlib sin PIL explícito.
+                      marker = 'from __future__ import annotations\n'
+                      if marker not in text:
+                          raise RuntimeError(f'No encuentro punto de importación seguro en {path}')
+                      text = text.replace(marker, marker + '\nfrom map_branding import brand_image, brand_figure\n', 1)
+
+              if text != original:
+                  path.write_text(text, encoding='utf-8')
+                  changed.append(str(path))
+
+          if not changed:
+              raise RuntimeError('No se modificó ningún generador; abortamos para no dar un falso positivo.')
+          if save_sites < 10:
+              raise RuntimeError(f'Solo se encontraron {save_sites} puntos de guardado; revisión incompleta.')
+
+          print('Archivos modificados:', len(changed))
+          for p in changed:
+              print(' -', p)
+          print('Puntos de guardado firmados:', save_sites)
+          PY
+
+      - name: Validar sintaxis y utilidad de marca
+        run: |
+          python -m compileall -q scripts
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'scripts')
+          from map_branding import brand_image, credit_text
+
+          expected_author = 'Creado por José María Parrón Pinto (elrincondeteexplicoTube)'
+          cases = {
+              'public-icon40/icon-eu/temperature_2m/f000.webp': 'DWD Open Data',
+              'public-phase29/gfs/temperature_2m/f000.webp': 'NOAA/NCEP NOMADS',
+              'public-phase29/ecmwf/temperature_2m/f000.webp': 'ECMWF Open Data',
+          }
+          for p, source in cases.items():
+              text = credit_text(p)
+              assert text == f'{expected_author} - Datos oficiales: {source}', text
+              img = Image.new('RGBA', (1600, 900), (30, 70, 110, 220))
+              before = img.tobytes()
+              branded = brand_image(img, p)
+              assert branded.tobytes() != before
+          print('Marca validada para DWD, NOAA/NCEP y ECMWF')
+          PY
+
+      - name: Mostrar cambios
+        run: git diff --check && git diff --stat && git diff
+
+      - name: Guardar cambios en main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/*.py
+          git commit -m "Añadir marca personal y fuente oficial a los mapas"
+          git push origin main
