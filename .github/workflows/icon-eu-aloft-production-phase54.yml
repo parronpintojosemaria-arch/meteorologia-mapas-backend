@@ -1,0 +1,100 @@
+name: Fase 54 · ICON-EU producción niveles y Jet +108 a +120 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_aloft_production_phase54.py'
+      - '.github/workflows/icon-eu-aloft-production-phase54.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-aloft-production:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Generar 50 mapas de niveles y Jet
+        run: python scripts/icon_eu_aloft_production_phase54.py
+
+      - name: Validar Fase 54 50/50 y marca
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          base=Path('public-icon54/icon-eu')
+          d=json.loads((base/'manifest-icon-eu54.json').read_text(encoding='utf-8'))
+          s=d.get('summary',{})
+          steps=[108,111,114,117,120]
+          levels=[925,850,700,500,300,250,200]
+          jet=[300,250,200]
+          expected_bounds={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          expected_brand='Creado por José María Parrón Pinto (elrincondeteexplicoTube) - Datos oficiales: DWD Open Data'
+          expected_rule='+108..+120 h cada 3 h'
+
+          if d.get('status')!='ok': raise SystemExit(f'Fase 54 no está ok: {d.get("failure_notes",[])[:15]}')
+          if d.get('schema')!=54 or d.get('forecast_steps')!=steps: raise SystemExit('Schema o pasos inesperados')
+          if d.get('pressure_levels_hpa')!=levels or d.get('jet_levels_hpa')!=jet: raise SystemExit('Niveles presión/Jet inesperados')
+          if d.get('step_rule')!=expected_rule: raise SystemExit(f'Regla temporal incorrecta: {d.get("step_rule")}')
+          if d.get('branding')!=expected_brand or d.get('branding_position')!='bottom-right': raise SystemExit(f'Marca inesperada: {d.get("branding")}')
+          if s.get('successes')!=50 or s.get('failures')!=0 or s.get('expected')!=50 or s.get('map_files')!=50: raise SystemExit(f'Resumen incorrecto: {s}')
+
+          webps=list(base.rglob('*.webp'))
+          if len(webps)!=50: raise SystemExit(f'Número de WebP incorrecto: {len(webps)}')
+          sizes=set()
+          for lev in levels:
+              recs=d.get('levels',{}).get(f'{lev}hpa',{})
+              for step in steps:
+                  sk=f'f{step:03d}'; rec=recs.get(sk,{})
+                  if rec.get('status')!='ok': raise SystemExit(f'Presión {lev} {sk} no válida: {rec}')
+                  b=rec.get('bounds',{})
+                  for key,val in expected_bounds.items():
+                      if abs(float(b.get(key,9999))-val)>1e-6: raise SystemExit(f'Bounds incorrectos presión {lev} {sk}: {b}')
+                  tr=rec.get('temperature_range') or {}; zr=rec.get('geopotential_height_range') or {}
+                  if not tr or float(tr.get('min',-999)) < -120 or float(tr.get('max',999)) > 70: raise SystemExit(f'Temperatura sospechosa {lev} {sk}: {tr}')
+                  if not zr or float(zr.get('min',-99999)) < -1000 or float(zr.get('max',99999)) > 20000: raise SystemExit(f'Geopotencial sospechoso {lev} {sk}: {zr}')
+                  path=Path('public-icon54')/rec.get('image','')
+                  if not path.exists(): raise SystemExit(f'Falta imagen presión {lev} {sk}')
+                  with Image.open(path) as im: sizes.add(im.size)
+
+          for lev in jet:
+              recs=d.get('jet',{}).get(f'{lev}hpa',{})
+              for step in steps:
+                  sk=f'f{step:03d}'; rec=recs.get(sk,{})
+                  if rec.get('status')!='ok': raise SystemExit(f'Jet {lev} {sk} no válido: {rec}')
+                  b=rec.get('bounds',{})
+                  for key,val in expected_bounds.items():
+                      if abs(float(b.get(key,9999))-val)>1e-6: raise SystemExit(f'Bounds incorrectos Jet {lev} {sk}: {b}')
+                  wr=rec.get('wind_speed_range') or {}; zr=rec.get('geopotential_height_range') or {}
+                  if not wr or float(wr.get('min',-1)) < -0.01 or float(wr.get('max',9999)) > 500: raise SystemExit(f'Jet físicamente sospechoso {lev} {sk}: {wr}')
+                  if not zr or float(zr.get('min',-99999)) < -1000 or float(zr.get('max',99999)) > 20000: raise SystemExit(f'Geopotencial Jet sospechoso {lev} {sk}: {zr}')
+                  path=Path('public-icon54')/rec.get('image','')
+                  if not path.exists(): raise SystemExit(f'Falta imagen Jet {lev} {sk}')
+                  with Image.open(path) as im: sizes.add(im.size)
+
+          if sizes!={(3576,3656)}: raise SystemExit(f'Tamaños inesperados: {sizes}')
+          print('ICON-EU Fase 54 validada:',s,'run',d.get('run_utc'),'size',next(iter(sizes)))
+          print('Marca:',d.get('branding'))
+          PY
+
+      - name: Subir artefacto Fase 54
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase54
+          path: public-icon54/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
