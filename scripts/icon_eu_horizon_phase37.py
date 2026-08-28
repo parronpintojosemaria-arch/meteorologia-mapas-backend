@@ -99,12 +99,12 @@ def main():
         "run_utc": run_dt.isoformat(),
         "grid": "regular latitude-longitude 0.0625°",
         "official_horizon_hours": 120,
-        "official_regular_grid_cadence": {
-            "0_to_78h": "1 h",
-            "after_78h_to_120h": "3 h",
-            "u10_v10_exception": "1 h to forecast end",
+        "regular_grid_cadence": {
+            "documented_general": "1 h through +78 h, then 3 h through +120 h",
+            "documented_u10_v10_note": "DWD database description states hourly output to forecast end",
+            "open_data_endpoint_observed": "current regular GRIB endpoint exposes +78 h, then +81 h; +79/+80 are absent for T_2M and U_10M",
         },
-        "official_reference": "DWD ICON database description, EU Nest output fields",
+        "official_reference": "DWD ICON database description, EU Nest output fields; cadence also verified against the live DWD Open Data regular-GRIB endpoint",
         "long_steps_tested": list(LONG_STEPS),
         "probes": {},
         "cadence_checks": {},
@@ -126,12 +126,16 @@ def main():
             else:
                 failures.append(f"Falta {key} en +{step} h")
 
+    # La documentación de base de datos de DWD menciona una excepción horaria para U10/V10.
+    # Sin embargo, el endpoint regular GRIB que consume nuestra web no publica actualmente
+    # +79/+80 para U_10M: salta de +78 a +81, igual que los campos generales. Validamos
+    # deliberadamente el producto real servido, porque es el que utilizará el backend.
     cadence_specs = {
         "t2m_f079_absent": (single_url(run_dt, 79, "t_2m", "T_2M"), False),
         "t2m_f080_absent": (single_url(run_dt, 80, "t_2m", "T_2M"), False),
         "t2m_f081_present": (single_url(run_dt, 81, "t_2m", "T_2M"), True),
-        "u10_f079_present": (single_url(run_dt, 79, "u_10m", "U_10M"), True),
-        "u10_f080_present": (single_url(run_dt, 80, "u_10m", "U_10M"), True),
+        "u10_f079_absent": (single_url(run_dt, 79, "u_10m", "U_10M"), False),
+        "u10_f080_absent": (single_url(run_dt, 80, "u_10m", "U_10M"), False),
     }
     for name, (url, expected) in cadence_specs.items():
         rec = probe(url)
