@@ -1,0 +1,61 @@
+name: Fase 28 · Horizonte máximo ECMWF y GFS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/max_horizon_phase28.py"
+      - ".github/workflows/max-horizon-phase28.yml"
+      - "requirements.txt"
+
+jobs:
+  ecmwf-maximo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Probar ECMWF +360 h
+        run: python scripts/max_horizon_phase28.py ecmwf
+      - name: Subir artefacto ECMWF
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-ecmwf-fase28-max360
+          path: public-phase28/ecmwf/
+          if-no-files-found: error
+          retention-days: 7
+
+  gfs-maximo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Probar GFS +384 h
+        run: python scripts/max_horizon_phase28.py gfs
+      - name: Subir artefacto GFS
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-gfs-fase28-max384
+          path: public-phase28/gfs/
+          if-no-files-found: error
+          retention-days: 7
