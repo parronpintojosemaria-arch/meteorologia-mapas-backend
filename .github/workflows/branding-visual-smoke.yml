@@ -1,0 +1,69 @@
+name: Prueba visual · marca personal en mapa ICON-EU
+
+on:
+  push:
+    paths:
+      - '.github/workflows/branding-visual-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  branding-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar un mapa ICON-EU real con firma
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'scripts')
+          import icon_eu_temperature_phase34 as s34
+          from map_branding import credit_text
+
+          run_dt = s34.pick_run()
+          path, url = s34.download(run_dt, 0)
+          vals, units, bounds, dx, dy = s34.read_temperature(path)
+          s34.validate_domain(bounds)
+          out = Path('branding-smoke/icon-eu-temperature-f000.webp')
+          s34.render(vals, bounds, out)
+          credit = credit_text(out, 'DWD Open Data')
+          expected = 'Creado por José María Parrón Pinto (elrincondeteexplicoTube) - Datos oficiales: DWD Open Data'
+          if credit != expected:
+              raise SystemExit(f'Texto inesperado: {credit}')
+          meta = {
+              'status': 'ok',
+              'run_utc': run_dt.isoformat(),
+              'source_url': url,
+              'image': str(out),
+              'bounds': bounds,
+              'units': units,
+              'credit': credit,
+          }
+          Path('branding-smoke/manifest.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps(meta, ensure_ascii=False))
+          PY
+
+      - name: Subir prueba visual
+        uses: actions/upload-artifact@v4
+        with:
+          name: prueba-visual-marca-personal
+          path: branding-smoke/
+          if-no-files-found: error
+          retention-days: 7
