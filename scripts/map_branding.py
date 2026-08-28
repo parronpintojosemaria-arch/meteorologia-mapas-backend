@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -9,6 +10,7 @@ AUTHOR_TEXT = "Creado por José María Parrón Pinto (elrincondeteexplicoTube)"
 
 
 def infer_source_label(output_path) -> str:
+    """Identifica el proveedor por la ruta y, como respaldo, por el generador que llama a la marca."""
     text = str(output_path).lower().replace("\\", "/")
     if "icon-eu" in text or "public-icon" in text:
         return "DWD Open Data"
@@ -16,6 +18,18 @@ def infer_source_label(output_path) -> str:
         return "NOAA/NCEP NOMADS"
     if "/ecmwf/" in text or "ecmwf" in Path(text).name:
         return "ECMWF Open Data"
+
+    # Algunos generadores históricos guardan en rutas genéricas. En ese caso
+    # usamos el nombre del módulo que realmente está renderizando el mapa.
+    for frame in inspect.stack()[1:10]:
+        caller = Path(frame.filename).name.lower()
+        if caller.startswith("icon_eu_"):
+            return "DWD Open Data"
+        if caller.startswith("gfs_"):
+            return "NOAA/NCEP NOMADS"
+        if caller.startswith("ecmwf_"):
+            return "ECMWF Open Data"
+
     return "fuente meteorológica oficial indicada en el manifiesto"
 
 
