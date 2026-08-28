@@ -7,17 +7,17 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#071528;color:#eef7ff;overflow:hidden}
-*{box-sizing:border-box}.app{height:100%;display:flex;flex-direction:column;min-width:0}.top{padding:10px 12px;background:linear-gradient(135deg,#06294b,#0b4f84);box-shadow:0 2px 14px #0005;z-index:1001}.title{font-weight:800;font-size:16px}.sub{font-size:11px;opacity:.85;margin-top:2px}.controls{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.controls label{display:flex;flex-direction:column;gap:3px;font-size:10px;min-width:120px;flex:1}.controls select,.locationbox input{width:100%;min-width:0;border:1px solid #5fa8df;background:#fff;color:#10243a;border-radius:7px;padding:7px 8px;font-size:13px}.timeline{display:grid;grid-template-columns:1fr 1.35fr 1fr;gap:4px}.timeline button,.locationbox button{border:1px solid #5fa8df;background:#fff;color:#0a3558;border-radius:7px;padding:7px 6px;font-size:13px;font-weight:800;cursor:pointer;min-width:0}.timeline button:active,.locationbox button:active{transform:translateY(1px)}.timeline button[disabled],.locationbox button[disabled]{opacity:.45;cursor:default}.locationbox{display:grid;grid-template-columns:minmax(140px,1fr) auto;gap:4px}.locationbox button{white-space:nowrap}.status{margin-top:7px;font-size:11px;white-space:normal;overflow-wrap:anywhere}.mapwrap{position:relative;flex:1;min-height:0;min-width:0}#map{position:absolute;inset:0}.badge{position:absolute;z-index:900;left:9px;bottom:9px;max-width:calc(100% - 18px);background:rgba(5,20,37,.88);border:1px solid rgba(255,255,255,.2);color:#fff;padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.35;pointer-events:none}.legend{position:absolute;z-index:900;right:9px;bottom:9px;width:min(290px,calc(100% - 18px));background:rgba(5,20,37,.90);border:1px solid rgba(255,255,255,.22);color:#fff;padding:8px 9px;border-radius:8px;font-size:10px;line-height:1.3;pointer-events:none}.legend-title{font-weight:800;margin-bottom:5px}.legend-bar{height:12px;border-radius:5px;border:1px solid rgba(255,255,255,.45);overflow:hidden}.legend-scale{display:flex;justify-content:space-between;gap:5px;margin-top:3px;font-variant-numeric:tabular-nums}.legend-note{margin-top:4px;opacity:.86}.leaflet-control-attribution{font-size:9px!important}
-@media(max-width:700px){.top{padding:8px}.title{font-size:14px}.controls{display:grid;grid-template-columns:1fr 1fr}.controls label{min-width:0}.status{font-size:10px}.legend{right:7px;bottom:7px;width:min(245px,calc(100% - 14px));font-size:9px}.badge{left:7px;bottom:7px;max-width:calc(100% - 14px)}}
-@media(max-width:520px){.badge{bottom:88px;max-width:calc(100% - 14px)}.legend{width:calc(100% - 14px)}}
-@media(max-width:420px){.controls{grid-template-columns:1fr}.controls select,.timeline button,.locationbox input,.locationbox button{font-size:12px;padding:6px 7px}.locationbox{grid-template-columns:1fr auto}.top{max-height:52vh;overflow:auto}.badge{font-size:10px}}
+*{box-sizing:border-box}.app{height:100%;display:flex;flex-direction:column;min-width:0}.top{padding:10px 12px;background:linear-gradient(135deg,#06294b,#0b4f84);box-shadow:0 2px 14px #0005;z-index:1001}.title{font-weight:800;font-size:16px}.sub{font-size:11px;opacity:.88;margin-top:2px}.controls{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.controls label{display:flex;flex-direction:column;gap:3px;font-size:10px;min-width:118px;flex:1}.controls select,.locationbox input{width:100%;min-width:0;border:1px solid #5fa8df;background:#fff;color:#10243a;border-radius:7px;padding:7px 8px;font-size:13px}.timeline{display:grid;grid-template-columns:1fr 1.35fr 1fr;gap:4px}.timeline button,.locationbox button{border:1px solid #5fa8df;background:#fff;color:#0a3558;border-radius:7px;padding:7px 6px;font-size:13px;font-weight:800;cursor:pointer;min-width:0}.timeline button:active,.locationbox button:active{transform:translateY(1px)}.timeline button[disabled],.locationbox button[disabled]{opacity:.45;cursor:default}.locationbox{display:grid;grid-template-columns:minmax(140px,1fr) auto;gap:4px}.locationbox button{white-space:nowrap}.status{margin-top:7px;font-size:11px;white-space:normal;overflow-wrap:anywhere}.mapwrap{position:relative;flex:1;min-height:0;min-width:0}#map{position:absolute;inset:0}.badge{position:absolute;z-index:900;left:9px;bottom:9px;max-width:calc(100% - 18px);background:rgba(5,20,37,.88);border:1px solid rgba(255,255,255,.2);color:#fff;padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.35;pointer-events:none}.legend{position:absolute;z-index:900;right:9px;bottom:9px;width:min(300px,calc(100% - 18px));background:rgba(5,20,37,.90);border:1px solid rgba(255,255,255,.22);color:#fff;padding:8px 9px;border-radius:8px;font-size:10px;line-height:1.3;pointer-events:none}.legend-title{font-weight:800;margin-bottom:5px}.legend-bar{height:12px;border-radius:5px;border:1px solid rgba(255,255,255,.45);overflow:hidden}.legend-scale{display:flex;justify-content:space-between;gap:5px;margin-top:3px;font-variant-numeric:tabular-nums}.legend-note{margin-top:4px;opacity:.88}.leaflet-control-attribution{font-size:9px!important}
+@media(max-width:700px){.top{padding:8px}.title{font-size:14px}.controls{display:grid;grid-template-columns:1fr 1fr}.controls label{min-width:0}.status{font-size:10px}.legend{right:7px;bottom:7px;width:min(250px,calc(100% - 14px));font-size:9px}.badge{left:7px;bottom:7px;max-width:calc(100% - 14px)}}
+@media(max-width:520px){.badge{bottom:92px;max-width:calc(100% - 14px)}.legend{width:calc(100% - 14px)}}
+@media(max-width:420px){.controls{grid-template-columns:1fr}.controls select,.timeline button,.locationbox input,.locationbox button{font-size:12px;padding:6px 7px}.locationbox{grid-template-columns:1fr auto}.top{max-height:54vh;overflow:auto}.badge{font-size:10px}}
 </style>
 </head>
 <body>
 <div class="app">
 <header class="top">
   <div class="title">Meteorología Interactiva · Modelos</div>
-  <div class="sub">ECMWF IFS + NOAA GFS · datos oficiales · mapa ligero Leaflet · sin WebGL</div>
+  <div class="sub">ECMWF IFS hasta 15 días · NOAA GFS hasta 16 días · datos oficiales · Leaflet ligero · sin WebGL</div>
   <div class="controls">
     <label>Modelo
       <select id="model"><option value="ecmwf">ECMWF IFS</option><option value="gfs">NOAA GFS</option></select>
@@ -60,225 +60,185 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Robo
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (async function(){
- const q=id=>document.getElementById(id),status=q('status'),badge=q('badge');
- const map=L.map('map',{preferCanvas:true,scrollWheelZoom:false,zoomControl:true,minZoom:2}).setView([40,-3],4);
- L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
- const defaultBounds=[[20,-25],[72,45]];
- let overlay=null,playing=false,playTimer=null,placeMarker=null,placeText='';
- const pressureScale={925:[-15,40],850:[-20,35],700:[-30,25],500:[-45,15],300:[-65,-20],250:[-72,-25],200:[-75,-30]};
- const turbo='linear-gradient(90deg,#30123b 0%,#4145ab 12%,#2a7bde 25%,#1bb5a9 38%,#78d151 50%,#d8e219 62%,#fdae32 75%,#ef5a2f 88%,#7a0403 100%)';
- const viridis='linear-gradient(90deg,#440154 0%,#414487 25%,#2a788e 50%,#22a884 72%,#7ad151 88%,#fde725 100%)';
- const clouds='linear-gradient(90deg,#ffffff 0%,#d7d7d7 35%,#8a8a8a 70%,#222222 100%)';
- const precip='linear-gradient(90deg,#bfe9ff 0%,#2f9df4 18%,#19b66a 36%,#f7df36 55%,#f68b2c 72%,#d62626 88%,#7b1fa2 100%)';
- const snowWe='linear-gradient(90deg,#e9f8ff 0%,#b9e8ff 22%,#76c8ff 42%,#5876e8 62%,#7f4cc9 80%,#c33ab8 100%)';
- const snowDepth='linear-gradient(90deg,#f7fbff 0%,#d0e8f2 25%,#73b3d8 50%,#2878b5 72%,#08306b 100%)';
- const modelInfo={
-   ecmwf:{name:'ECMWF IFS',source:'ECMWF Open Data'},
-   gfs:{name:'NOAA GFS',source:'NOAA/NCEP NOMADS'}
- };
- const variableOptions={
-   ecmwf:[
-     ['temperature_2m','Temperatura 2 m'],['wind_10m','Viento 10 m'],['cloud_cover_total','Nubosidad total'],
-     ['precipitation_total','Precipitación acumulada'],['snowfall_water_equivalent','Nieve · equivalente en agua']
-   ],
-   gfs:[
-     ['temperature_2m','Temperatura 2 m'],['wind_10m','Viento 10 m'],['cloud_cover_total','Nubosidad total'],
-     ['precipitation_total','Precipitación acumulada'],['snow_depth','Espesor de nieve en el suelo']
-   ]
- };
- const data={ecmwf:{},gfs:{}};
+  const q=id=>document.getElementById(id);
+  const status=q('status'),badge=q('badge');
+  const map=L.map('map',{preferCanvas:true,scrollWheelZoom:false,zoomControl:true,minZoom:2}).setView([40,-3],4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+  const defaultBounds=[[20,-25],[72,45]];
+  let overlay=null,playing=false,playTimer=null,placeMarker=null,placeText='';
 
- async function getJson(path,label){
-   const r=await fetch(path,{cache:'no-store'});
-   if(!r.ok)throw Error(label+' '+r.status);
-   return r.json();
- }
- try{
-   const loaded=await Promise.all([
-     getJson('./manifest.json','ECMWF superficie'),
-     getJson('./manifest-pressure-levels.json','ECMWF presión'),
-     getJson('./manifest-jet-300.json','ECMWF jet300'),
-     getJson('./manifest-jet-250.json','ECMWF jet250'),
-     getJson('./manifest-jet-200.json','ECMWF jet200'),
-     getJson('./manifest-gfs20.json','GFS temperatura'),
-     getJson('./manifest-gfs21.json','GFS viento/nubosidad'),
-     getJson('./manifest-gfs23.json','GFS precipitación/nieve'),
-     getJson('./manifest-gfs-pressure24.json','GFS presión'),
-     getJson('./manifest-gfs-jet25.json','GFS jet')
-   ]);
-   data.ecmwf={surface:loaded[0],pressure:loaded[1],jets:{300:loaded[2],250:loaded[3],200:loaded[4]}};
-   data.gfs={temperature:loaded[5],surface:loaded[6],precipSnow:loaded[7],pressure:loaded[8],jet:loaded[9]};
- }catch(e){status.textContent='No se pudieron cargar los manifiestos: '+e.message;return;}
+  const pressureScale={925:[-15,40],850:[-20,35],700:[-30,25],500:[-45,15],300:[-65,-20],250:[-72,-25],200:[-75,-30]};
+  const turbo='linear-gradient(90deg,#30123b 0%,#4145ab 12%,#2a7bde 25%,#1bb5a9 38%,#78d151 50%,#d8e219 62%,#fdae32 75%,#ef5a2f 88%,#7a0403 100%)';
+  const viridis='linear-gradient(90deg,#440154 0%,#414487 25%,#2a788e 50%,#22a884 72%,#7ad151 88%,#fde725 100%)';
+  const clouds='linear-gradient(90deg,#ffffff 0%,#d7d7d7 35%,#8a8a8a 70%,#222222 100%)';
+  const precip='linear-gradient(90deg,#bfe9ff 0%,#2f9df4 18%,#19b66a 36%,#f7df36 55%,#f68b2c 72%,#d62626 88%,#7b1fa2 100%)';
+  const snowWe='linear-gradient(90deg,#e9f8ff 0%,#b9e8ff 22%,#76c8ff 42%,#5876e8 62%,#7f4cc9 80%,#c33ab8 100%)';
+  const snowDepth='linear-gradient(90deg,#f7fbff 0%,#d0e8f2 25%,#73b3d8 50%,#2878b5 72%,#08306b 100%)';
 
- function modelKey(){return q('model').value}
- function info(){return modelInfo[modelKey()]}
- function sortedSteps(keys){return [...keys].sort((a,b)=>parseInt(a.slice(1),10)-parseInt(b.slice(1),10))}
- function rebuildVariables(){
-   const old=q('variable').value;
-   q('variable').innerHTML='';
-   variableOptions[modelKey()].forEach(([value,label])=>{
-     const o=document.createElement('option');o.value=value;o.textContent=label;q('variable').appendChild(o);
-   });
-   if([...q('variable').options].some(o=>o.value===old))q('variable').value=old;
- }
- function gfsSurfaceManifestFor(variable){
-   if(variable==='temperature_2m')return data.gfs.temperature;
-   if(variable==='wind_10m'||variable==='cloud_cover_total')return data.gfs.surface;
-   return data.gfs.precipSnow;
- }
- function stepsForKind(){
-   const kind=q('kind').value,model=modelKey();
-   if(model==='ecmwf'){
-     if(kind==='surface')return sortedSteps(Object.keys(data.ecmwf.surface.steps||{}));
-     if(kind==='jet')return sortedSteps(Object.keys(data.ecmwf.jets[parseInt(q('jetLevel').value,10)]?.steps||{}));
-     const lev=q('level').value+'hpa';
-     return sortedSteps(Object.keys(data.ecmwf.pressure.levels?.[lev]?.steps||{}));
-   }
-   if(kind==='surface'){
-     const variable=q('variable').value,m=gfsSurfaceManifestFor(variable);
-     return sortedSteps(Object.keys(m.steps||{}).filter(step=>{
-       if(variable==='temperature_2m')return m.steps?.[step]?.status==='ok';
-       return m.steps?.[step]?.[variable]?.status==='ok';
-     }));
-   }
-   if(kind==='jet'){
-     const lev=q('jetLevel').value+'hpa';
-     return sortedSteps(Object.keys(data.gfs.jet.levels?.[lev]?.steps||{}));
-   }
-   const lev=q('level').value+'hpa';
-   return sortedSteps(Object.keys(data.gfs.pressure.levels?.[lev]?.steps||{}));
- }
- function selectedRecord(){
-   const step=q('step').value,kind=q('kind').value,model=modelKey();
-   if(model==='ecmwf'){
-     if(kind==='surface')return data.ecmwf.surface.steps?.[step]?.[q('variable').value]||null;
-     if(kind==='jet')return data.ecmwf.jets[parseInt(q('jetLevel').value,10)]?.steps?.[step]||null;
-     return data.ecmwf.pressure.levels?.[q('level').value+'hpa']?.steps?.[step]||null;
-   }
-   if(kind==='surface'){
-     const variable=q('variable').value,m=gfsSurfaceManifestFor(variable);
-     if(variable==='temperature_2m')return m.steps?.[step]||null;
-     return m.steps?.[step]?.[variable]||null;
-   }
-   if(kind==='jet')return data.gfs.jet.levels?.[q('jetLevel').value+'hpa']?.steps?.[step]||null;
-   return data.gfs.pressure.levels?.[q('level').value+'hpa']?.steps?.[step]||null;
- }
- function runFor(){
-   const model=modelKey(),kind=q('kind').value;
-   if(model==='ecmwf'){
-     if(kind==='surface')return data.ecmwf.surface.run_utc||'';
-     if(kind==='jet')return data.ecmwf.jets[parseInt(q('jetLevel').value,10)]?.run_utc||'';
-     return data.ecmwf.pressure.run_utc||'';
-   }
-   if(kind==='surface')return gfsSurfaceManifestFor(q('variable').value).run_utc||'';
-   if(kind==='jet')return data.gfs.jet.run_utc||'';
-   return data.gfs.pressure.run_utc||'';
- }
- function titleFor(){
-   const kind=q('kind').value;
-   if(kind==='surface')return q('variable').selectedOptions[0]?.textContent||'Superficie';
-   if(kind==='jet')return 'Jet Stream '+q('jetLevel').value+' hPa · viento + geopotencial';
-   return q('level').value+' hPa · Temperatura + geopotencial';
- }
- function boundsFor(rec){
-   if(rec?.bounds&&Number.isFinite(rec.bounds.south)&&Number.isFinite(rec.bounds.west)&&Number.isFinite(rec.bounds.north)&&Number.isFinite(rec.bounds.east))
-     return [[rec.bounds.south,rec.bounds.west],[rec.bounds.north,rec.bounds.east]];
-   return defaultBounds;
- }
- function legendConfig(){
-   const kind=q('kind').value,variable=q('variable').value,model=modelKey(),source=info().name;
-   if(kind==='pressure'){
-     const level=parseInt(q('level').value,10),range=pressureScale[level]||[-45,15];
-     return {title:'Temperatura a '+level+' hPa',min:range[0],max:range[1],unit:'°C',bar:turbo,note:'Colores: temperatura · líneas negras: altura geopotencial (m) · '+source+'.'};
-   }
-   if(kind==='jet')return {title:'Jet Stream '+q('jetLevel').value+' hPa · velocidad del viento',min:60,max:360,unit:'km/h',bar:turbo,note:'Colores: velocidad del viento · líneas negras: altura geopotencial (m) · '+source+'.'};
-   if(variable==='temperature_2m')return {title:'Temperatura a 2 m',min:-30,max:45,unit:'°C',bar:turbo,note:'Temperatura prevista · '+source+'.'};
-   if(variable==='wind_10m')return {title:'Velocidad del viento a 10 m',min:0,max:140,unit:'km/h',bar:viridis,note:'Velocidad calculada a partir de componentes U/V oficiales · '+source+'.'};
-   if(variable==='cloud_cover_total')return {title:'Nubosidad total',min:0,max:100,unit:'%',bar:clouds,note:'0 % despejado · 100 % cubierto · '+source+'.'};
-   if(variable==='precipitation_total')return {title:'Precipitación total acumulada',min:0,max:60,unit:'mm',bar:precip,note:'Acumulada desde el inicio de la ejecución del modelo; no equivale solo a lluvia · '+source+'.'};
-   if(variable==='snow_depth')return {title:'Espesor de nieve en el suelo',min:0,max:100,unit:'cm',bar:snowDepth,note:'Espesor instantáneo sobre el suelo; NO es nieve caída acumulada · NOAA GFS.'};
-   return {title:'Nieve · equivalente en agua',min:0,max:30,unit:'mm',bar:snowWe,note:'Equivalente en agua de la nevada; NO es espesor de nieve en cm · ECMWF IFS.'};
- }
- function fmtLegend(v){return Number.isInteger(v)?String(v):v.toFixed(1)}
- function updateLegend(){
-   const cfg=legendConfig(),mid=(cfg.min+cfg.max)/2;
-   q('legendTitle').textContent=cfg.title;q('legendBar').style.background=cfg.bar;
-   q('legendMin').textContent=fmtLegend(cfg.min)+' '+cfg.unit;q('legendMid').textContent=fmtLegend(mid)+' '+cfg.unit;q('legendMax').textContent=fmtLegend(cfg.max)+' '+cfg.unit;q('legendNote').textContent=cfg.note;
- }
- function statusText(base){status.textContent=base+(placeText?' · ciudad: '+placeText:'')}
- function draw(){
-   updateLegend();
-   const rec=selectedRecord(),mi=info();
-   if(overlay){map.removeLayer(overlay);overlay=null}
-   badge.textContent=mi.name+' · '+titleFor();
-   if(!rec){statusText('No hay datos para esta selección.');return}
-   if(rec.status!=='ok'){statusText((rec.status==='not_applicable'?'No aplicable':'No disponible')+(rec.note?' · '+rec.note:''));return}
-   overlay=L.imageOverlay('./'+rec.image,boundsFor(rec),{opacity:.74,interactive:false}).addTo(map);overlay.bringToFront();
-   const run=runFor(),stepText=q('step').selectedOptions[0]?.textContent||'';
-   statusText('Datos reales '+mi.source+' · '+titleFor()+' · '+stepText+(run?' · ejecución '+run:''));
- }
- function stopPlay(){
-   if(playTimer){clearInterval(playTimer);playTimer=null}
-   playing=false;q('playStep').textContent='▶ Reproducir';q('playStep').setAttribute('aria-label','Reproducir animación');q('playStep').title='Reproducir animación';
- }
- function updateTimelineState(){
-   const disabled=q('step').options.length<2;
-   q('prevStep').disabled=disabled;q('nextStep').disabled=disabled;q('playStep').disabled=disabled;if(disabled)stopPlay();
- }
- function fillSteps(){
-   const old=q('step').value;q('step').innerHTML='';
-   stepsForKind().forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent='+'+parseInt(k.slice(1),10)+' h';q('step').appendChild(o)});
-   if([...q('step').options].some(o=>o.value===old))q('step').value=old;
-   updateTimelineState();
- }
- function moveStep(delta){
-   const s=q('step');if(s.options.length<2)return;
-   let i=s.selectedIndex+delta;if(i<0)i=s.options.length-1;if(i>=s.options.length)i=0;s.selectedIndex=i;draw();
- }
- function togglePlay(){
-   if(playing){stopPlay();return}
-   if(q('step').options.length<2)return;
-   playing=true;q('playStep').textContent='❚❚ Pausa';q('playStep').setAttribute('aria-label','Pausar animación');q('playStep').title='Pausar animación';
-   playTimer=setInterval(()=>moveStep(1),1200);
- }
- function setPlace(lat,lon,label,zoom){
-   if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
-   if(placeMarker)map.removeLayer(placeMarker);
-   placeText=label||lat.toFixed(3)+', '+lon.toFixed(3);
-   placeMarker=L.marker([lat,lon]).addTo(map).bindPopup(placeText);
-   map.setView([lat,lon],zoom||8);placeMarker.openPopup();draw();setTimeout(()=>map.invalidateSize(),80);
- }
- async function searchPlace(){
-   const text=q('place').value.trim();if(!text){statusText('Escribe una ciudad para buscar.');return}
-   const btn=q('searchPlace');btn.disabled=true;btn.textContent='Buscando…';
-   try{
-     const url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=es&q='+encodeURIComponent(text);
-     const r=await fetch(url,{headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);
-     const result=await r.json();if(!Array.isArray(result)||!result.length){statusText('No se encontró esa ciudad.');return}
-     const item=result[0];setPlace(parseFloat(item.lat),parseFloat(item.lon),item.display_name||text,8);
-   }catch(e){statusText('No se pudo buscar la ciudad: '+e.message)}
-   finally{btn.disabled=false;btn.textContent='Buscar'}
- }
- function refreshMode(){
-   stopPlay();
-   const kind=q('kind').value;
-   q('varLabel').style.display=kind==='surface'?'flex':'none';
-   q('levelLabel').style.display=kind==='pressure'?'flex':'none';
-   q('jetLevelLabel').style.display=kind==='jet'?'flex':'none';
-   fillSteps();draw();setTimeout(()=>map.invalidateSize(),100);
- }
- q('model').addEventListener('change',()=>{stopPlay();rebuildVariables();refreshMode()});
- q('kind').addEventListener('change',refreshMode);
- q('variable').addEventListener('change',()=>{stopPlay();fillSteps();draw()});
- q('level').addEventListener('change',()=>{stopPlay();fillSteps();draw()});
- q('jetLevel').addEventListener('change',()=>{stopPlay();fillSteps();draw()});
- q('step').addEventListener('change',draw);
- q('prevStep').addEventListener('click',()=>{stopPlay();moveStep(-1)});
- q('nextStep').addEventListener('click',()=>{stopPlay();moveStep(1)});
- q('playStep').addEventListener('click',togglePlay);
- q('searchPlace').addEventListener('click',searchPlace);
- q('place').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchPlace()}});
- rebuildVariables();refreshMode();map.fitBounds(defaultBounds,{padding:[6,6]});
+  const modelInfo={
+    ecmwf:{name:'ECMWF IFS',source:'ECMWF Open Data',horizon:'15 días'},
+    gfs:{name:'NOAA GFS',source:'NOAA/NCEP NOMADS',horizon:'16 días'}
+  };
+  const variableOptions={
+    ecmwf:[
+      ['temperature_2m','Temperatura 2 m'],['wind_10m','Viento 10 m'],['cloud_cover_total','Nubosidad total'],
+      ['precipitation_total','Precipitación total acumulada'],['snowfall_water_equivalent','Nieve caída · equivalente en agua']
+    ],
+    gfs:[
+      ['temperature_2m','Temperatura 2 m'],['wind_10m','Viento 10 m'],['cloud_cover_total','Nubosidad total'],
+      ['precipitation_total','Precipitación total acumulada'],['snow_depth','Espesor de nieve en el suelo']
+    ]
+  };
+
+  async function getJson(path,label){
+    const r=await fetch(path,{cache:'no-store'});
+    if(!r.ok)throw Error(label+' '+r.status);
+    return r.json();
+  }
+
+  const data={};
+  try{
+    const loaded=await Promise.all([
+      getJson('./ecmwf/manifest-phase29-ecmwf.json','ECMWF'),
+      getJson('./gfs/manifest-phase29-gfs.json','GFS')
+    ]);
+    data.ecmwf=loaded[0]; data.gfs=loaded[1];
+    if(data.ecmwf.status!=='ok'||data.gfs.status!=='ok')throw Error('algún manifiesto no está completo');
+  }catch(e){status.textContent='No se pudieron cargar los mapas: '+e.message;return;}
+
+  function modelKey(){return q('model').value;}
+  function manifest(){return data[modelKey()];}
+  function info(){return modelInfo[modelKey()];}
+  function stepKey(h){return 'f'+String(h).padStart(3,'0');}
+  function stepHours(key){return parseInt(String(key).replace(/^f/,''),10);}
+  function formatStep(h){
+    if(h===0)return '+0 h · inicio';
+    if(h%24===0)return '+'+h+' h · día '+(h/24);
+    return '+'+h+' h';
+  }
+  function runDate(){
+    const d=new Date(manifest().run_utc);
+    return isNaN(d)?'':d.toLocaleString('es-ES',{timeZone:'UTC',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' UTC';
+  }
+  function validDate(h){
+    const d=new Date(manifest().run_utc);
+    if(isNaN(d))return '';
+    d.setTime(d.getTime()+h*3600000);
+    return d.toLocaleString('es-ES',{timeZone:'UTC',weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' UTC';
+  }
+  function rebuildVariables(){
+    const old=q('variable').value;
+    q('variable').innerHTML='';
+    variableOptions[modelKey()].forEach(pair=>{
+      const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];q('variable').appendChild(o);
+    });
+    if(Array.from(q('variable').options).some(o=>o.value===old))q('variable').value=old;
+  }
+  function recordFor(key){
+    const m=manifest(),kind=q('kind').value;
+    if(kind==='surface')return m.surface&&m.surface[key]?m.surface[key][q('variable').value]:null;
+    if(kind==='pressure')return m.pressure&&m.pressure[q('level').value+'hpa']?m.pressure[q('level').value+'hpa'][key]:null;
+    return m.jet&&m.jet[q('jetLevel').value+'hpa']?m.jet[q('jetLevel').value+'hpa'][key]:null;
+  }
+  function availableSteps(){
+    const m=manifest(),kind=q('kind').value;
+    const raw=(kind==='surface'?m.surface_steps:m.aloft_steps)||[];
+    return raw.map(Number).filter(h=>{const r=recordFor(stepKey(h));return r&&r.status==='ok';});
+  }
+  function rebuildSteps(prefer){
+    const steps=availableSteps(),sel=q('step');
+    let want=Number.isFinite(prefer)?prefer:stepHours(sel.value||'f000');
+    if(!steps.includes(want))want=steps.length?steps.reduce((a,b)=>Math.abs(b-want)<Math.abs(a-want)?b:a,steps[0]):0;
+    sel.innerHTML='';
+    steps.forEach(h=>{const o=document.createElement('option');o.value=stepKey(h);o.textContent=formatStep(h);sel.appendChild(o);});
+    if(steps.length)sel.value=stepKey(want);
+    q('prevStep').disabled=steps.length<2;q('nextStep').disabled=steps.length<2;q('playStep').disabled=steps.length<2;
+  }
+  function titleFor(){
+    const kind=q('kind').value;
+    if(kind==='surface')return q('variable').selectedOptions[0]?q('variable').selectedOptions[0].textContent:'Superficie';
+    if(kind==='pressure')return q('level').value+' hPa · Temperatura + geopotencial';
+    return 'Jet Stream '+q('jetLevel').value+' hPa · viento + geopotencial';
+  }
+  function boundsFor(rec){
+    if(rec&&rec.bounds&&Number.isFinite(rec.bounds.south)&&Number.isFinite(rec.bounds.west)&&Number.isFinite(rec.bounds.north)&&Number.isFinite(rec.bounds.east))return [[rec.bounds.south,rec.bounds.west],[rec.bounds.north,rec.bounds.east]];
+    return defaultBounds;
+  }
+  function rangeText(rec){
+    const r=rec&&rec.range;if(!r||!Number.isFinite(r.min)||!Number.isFinite(r.max))return '';
+    return ' · rango '+r.min+'–'+r.max+(rec.units?' '+rec.units:'');
+  }
+  function updateLegend(rec){
+    const kind=q('kind').value,variable=q('variable').value;
+    let title='',bar=turbo,min='',mid='',max='',note='';
+    if(kind==='surface'){
+      if(variable==='temperature_2m'){title='Temperatura a 2 m';bar=turbo;min='-30 °C';mid='7 °C';max='45 °C';note='Temperatura del aire a 2 m.';}
+      else if(variable==='wind_10m'){title='Velocidad del viento a 10 m';bar=viridis;min='0';mid='70';max='140 km/h';note='Velocidad derivada de los componentes U/V.';}
+      else if(variable==='cloud_cover_total'){title='Nubosidad total';bar=clouds;min='0 %';mid='50 %';max='100 %';note='Fracción total de cielo cubierto.';}
+      else if(variable==='precipitation_total'){title='Precipitación total acumulada';bar=precip;min='0';mid='60';max='120 mm';note='Acumulada desde el inicio de la ejecución; incluye precipitación líquida y sólida.';}
+      else if(variable==='snowfall_water_equivalent'){title='Nieve caída · equivalente en agua';bar=snowWe;min='0';mid='30';max='60 mm';note='ECMWF: agua equivalente de la nevada acumulada; no es espesor en cm.';}
+      else {title='Espesor de nieve en el suelo';bar=snowDepth;min='0';mid='50';max='100 cm';note='GFS: espesor instantáneo de nieve presente en el suelo; no es nieve caída acumulada.';}
+      note+=rangeText(rec);
+    }else if(kind==='pressure'){
+      const sc=pressureScale[parseInt(q('level').value,10)]||[-45,15];
+      title=q('level').value+' hPa · temperatura y altura geopotencial';bar=turbo;min=sc[0]+' °C';mid=Math.round((sc[0]+sc[1])/2)+' °C';max=sc[1]+' °C';note='Color: temperatura. Líneas negras: altura geopotencial en metros.';
+    }else{
+      title='Jet Stream '+q('jetLevel').value+' hPa';bar=turbo;min='60';mid='210';max='360 km/h';note='Color: velocidad del viento en altura. Líneas negras: altura geopotencial.';
+    }
+    q('legendTitle').textContent=title;q('legendBar').style.background=bar;q('legendMin').textContent=min;q('legendMid').textContent=mid;q('legendMax').textContent=max;q('legendNote').textContent=note;
+  }
+  function render(){
+    const key=q('step').value,rec=recordFor(key),h=stepHours(key);
+    if(overlay){map.removeLayer(overlay);overlay=null;}
+    if(!rec||rec.status!=='ok'||!rec.image){status.textContent='No hay mapa disponible para esta combinación.';return;}
+    overlay=L.imageOverlay('./'+rec.image,boundsFor(rec),{opacity:.82,interactive:false}).addTo(map);
+    const place=placeText?' · ciudad: '+placeText:'';
+    const valid=validDate(h);
+    badge.textContent=info().name+' · '+titleFor()+' · '+formatStep(h)+(valid?' · válido '+valid:'');
+    status.textContent=info().source+' · ejecución '+runDate()+' · horizonte '+info().horizon+' · '+manifest().strategy+place;
+    updateLegend(rec);
+  }
+  function updateKind(){
+    const kind=q('kind').value;
+    q('varLabel').style.display=kind==='surface'?'flex':'none';
+    q('levelLabel').style.display=kind==='pressure'?'flex':'none';
+    q('jetLevelLabel').style.display=kind==='jet'?'flex':'none';
+    stopAnimation();rebuildSteps();render();
+  }
+  function stopAnimation(){
+    playing=false;if(playTimer){clearInterval(playTimer);playTimer=null;}q('playStep').textContent='▶ Reproducir';
+  }
+  function moveStep(delta){
+    const steps=availableSteps();if(steps.length<2)return;
+    let i=steps.indexOf(stepHours(q('step').value));if(i<0)i=0;i=(i+delta+steps.length)%steps.length;q('step').value=stepKey(steps[i]);render();
+  }
+  function togglePlay(){
+    if(playing){stopAnimation();return;}
+    if(availableSteps().length<2)return;
+    playing=true;q('playStep').textContent='⏸ Pausar';playTimer=setInterval(()=>moveStep(1),1200);
+  }
+  async function searchPlace(){
+    const text=q('place').value.trim();if(!text)return;
+    const btn=q('searchPlace');btn.disabled=true;status.textContent='Buscando '+text+'…';
+    try{
+      const u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=es&q='+encodeURIComponent(text);
+      const r=await fetch(u,{headers:{'Accept':'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);
+      const results=await r.json();if(!results.length)throw Error('no encontrada');
+      const lat=parseFloat(results[0].lat),lon=parseFloat(results[0].lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))throw Error('coordenadas no válidas');
+      placeText=results[0].display_name||text;if(placeMarker)map.removeLayer(placeMarker);placeMarker=L.marker([lat,lon]).addTo(map).bindPopup(placeText);map.setView([lat,lon],8);render();
+    }catch(e){status.textContent='No se pudo localizar la ciudad: '+e.message;}finally{btn.disabled=false;}
+  }
+
+  q('model').addEventListener('change',()=>{stopAnimation();const h=stepHours(q('step').value);rebuildVariables();rebuildSteps(h);render();});
+  q('kind').addEventListener('change',updateKind);
+  q('variable').addEventListener('change',()=>{stopAnimation();rebuildSteps(stepHours(q('step').value));render();});
+  q('level').addEventListener('change',()=>{stopAnimation();rebuildSteps(stepHours(q('step').value));render();});
+  q('jetLevel').addEventListener('change',()=>{stopAnimation();rebuildSteps(stepHours(q('step').value));render();});
+  q('step').addEventListener('change',render);
+  q('prevStep').addEventListener('click',()=>moveStep(-1));q('nextStep').addEventListener('click',()=>moveStep(1));q('playStep').addEventListener('click',togglePlay);
+  q('searchPlace').addEventListener('click',searchPlace);q('place').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchPlace();}});
+
+  rebuildVariables();rebuildSteps(0);updateKind();map.fitBounds(defaultBounds,{padding:[4,4]});
 })();
 </script>
 </body>
