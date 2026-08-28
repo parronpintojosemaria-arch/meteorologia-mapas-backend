@@ -1,0 +1,68 @@
+name: Fase 39 · ICON-EU calendario completo +120 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_full_timeline_phase39.py'
+      - '.github/workflows/icon-eu-full-timeline-phase39.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-full-timeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validar 93 pasos de ICON-EU en DWD
+        run: python scripts/icon_eu_full_timeline_phase39.py
+
+      - name: Validar Fase 39 558/558
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p=Path('public-icon39/icon-eu/manifest-icon-eu39.json')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+
+          if data.get('status')!='ok':
+              raise SystemExit(f'Fase 39 no válida: {data.get("failure_notes",[])[:10]}')
+          if data.get('expected_step_count')!=93:
+              raise SystemExit(f'Número de pasos incorrecto: {data.get("expected_step_count")}')
+          if data.get('expected_steps') != list(range(0,79)) + list(range(81,121,3)):
+              raise SystemExit('Calendario temporal incorrecto')
+          if s.get('field_count')!=6 or s.get('steps_per_field')!=93:
+              raise SystemExit(f'Resumen inesperado: {s}')
+          if s.get('successes')!=558 or s.get('expected')!=558 or s.get('failures')!=0:
+              raise SystemExit(f'Fase 39 no llega a 558/558: {s}')
+
+          for key,rec in data.get('fields',{}).items():
+              if rec.get('status')!='ok':
+                  raise SystemExit(f'Campo inválido {key}: {rec}')
+              if rec.get('published_step_count_0_120')!=93:
+                  raise SystemExit(f'{key} no tiene 93 pasos: {rec}')
+              if rec.get('missing_expected_steps') or rec.get('unexpected_steps_0_120'):
+                  raise SystemExit(f'Calendario distinto para {key}: {rec}')
+
+          print('ICON-EU Fase 39 validada:',s,'run',data.get('run_utc'))
+          PY
+
+      - name: Subir diagnóstico Fase 39
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase39
+          path: public-icon39/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
