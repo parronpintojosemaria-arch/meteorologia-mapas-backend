@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Instalar Pillow para validar la marca
+        run: python -m pip install Pillow
+
       - name: Aplicar firma a todos los renderizadores WebP
         run: |
           python - <<'PY'
@@ -36,7 +39,6 @@ jobs:
               if path.name == 'map_branding.py':
                   continue
               text = path.read_text(encoding='utf-8')
-              # Solo scripts que realmente escriben mapas WebP.
               if 'WEBP' not in text and '.webp' not in text:
                   continue
               if '.save(' not in text and '.savefig(' not in text:
@@ -48,7 +50,6 @@ jobs:
               needs_import = False
 
               for line in lines:
-                  # Caso compacto: Image.fromarray(...).save(out, "WEBP", ...)
                   m = re.match(r'^(?P<indent>\s*)Image\.fromarray\((?P<imgargs>.*)\)\.save\((?P<saveargs>.*)\)\s*$', line)
                   if m and 'WEBP' in m.group('saveargs').upper():
                       indent = m.group('indent')
@@ -61,7 +62,6 @@ jobs:
                       save_sites += 1
                       continue
 
-                  # Caso normal: img.save(out, "WEBP", ...)
                   m = re.match(r'^(?P<indent>\s*)(?P<var>[A-Za-z_]\w*)\.save\((?P<saveargs>.*)\)\s*$', line)
                   if m and 'WEBP' in m.group('saveargs').upper():
                       indent = m.group('indent')
@@ -75,7 +75,6 @@ jobs:
                       save_sites += 1
                       continue
 
-                  # Figuras Matplotlib guardadas como WebP o en un script WebP.
                   m = re.match(r'^(?P<indent>\s*)(?P<var>[A-Za-z_]\w*)\.savefig\((?P<saveargs>.*)\)\s*$', line)
                   if m:
                       indent = m.group('indent')
@@ -97,7 +96,6 @@ jobs:
                   if marker in text:
                       text = text.replace(marker, marker + 'from map_branding import brand_image, brand_figure\n', 1)
                   else:
-                      # Inserción segura tras future import para scripts Matplotlib sin PIL explícito.
                       marker = 'from __future__ import annotations\n'
                       if marker not in text:
                           raise RuntimeError(f'No encuentro punto de importación seguro en {path}')
@@ -123,7 +121,6 @@ jobs:
           python -m compileall -q scripts
           python - <<'PY'
           from PIL import Image
-          from pathlib import Path
           import sys
           sys.path.insert(0, 'scripts')
           from map_branding import brand_image, credit_text
