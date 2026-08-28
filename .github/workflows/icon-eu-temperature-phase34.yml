@@ -1,0 +1,61 @@
+name: Fase 34 · ICON-EU oficial temperatura 2 m
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/icon_eu_temperature_phase34.py"
+      - "requirements.txt"
+      - ".github/workflows/icon-eu-temperature-phase34.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-temperature:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar ICON-EU temperatura 2 m
+        run: python scripts/icon_eu_temperature_phase34.py
+      - name: Validar ICON-EU 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('public-icon34/icon-eu')
+          data=json.loads((base/'manifest-icon-eu34.json').read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          files=list((base/'temperature_2m').glob('*.webp'))
+          if data.get('status')!='ok' or s.get('successes')!=3 or s.get('failures')!=0 or s.get('expected')!=3:
+              raise SystemExit(f'ICON-EU incompleto: status={data.get("status")} summary={s}')
+          if len(files)!=3:
+              raise SystemExit(f'ICON-EU: WebP={len(files)}, esperado=3')
+          for step in ('f000','f012','f024'):
+              rec=data.get('steps',{}).get(step,{})
+              if rec.get('status')!='ok' or not rec.get('image'):
+                  raise SystemExit(f'ICON-EU {step} inválido: {rec}')
+              b=rec.get('bounds',{})
+              if b.get('west',999)>-9 or b.get('east',-999)<10 or b.get('south',999)>36.5 or b.get('north',-999)<60:
+                  raise SystemExit(f'ICON-EU cobertura inesperada {step}: {b}')
+          print('ICON-EU validado:', s)
+          PY
+      - name: Subir ICON-EU
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase34
+          path: public-icon34/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
