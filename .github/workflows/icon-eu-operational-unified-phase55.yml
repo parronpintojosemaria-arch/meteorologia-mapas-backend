@@ -1,0 +1,203 @@
+name: Fase 55 · ICON-EU producción operativa unificada
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_operational_selector_phase55.py'
+      - 'scripts/icon_eu_surface_operational_block.py'
+      - 'scripts/icon_eu_aloft_operational_block.py'
+      - 'scripts/icon_eu_operational_merge.py'
+      - '.github/workflows/icon-eu-operational-unified-phase55.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  select-run:
+    runs-on: ubuntu-24.04
+    outputs:
+      run_utc: ${{ steps.pin.outputs.run_utc }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Seleccionar una única pasada ICON-EU completa
+        id: pin
+        run: |
+          python scripts/icon_eu_operational_selector_phase55.py
+          echo "run_utc=$(cat .icon-eu-run.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Subir manifiesto del selector
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-eu-operational-selector
+          path: public-operational-selector/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
+
+  surface:
+    needs: select-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: s1
+            spec: '0:24:1'
+            rule: '+0..+24 h cada 1 h'
+          - id: s2
+            spec: '25:48:1'
+            rule: '+25..+48 h cada 1 h'
+          - id: s3
+            spec: '49:78:1'
+            rule: '+49..+78 h cada 1 h'
+          - id: s4
+            spec: '81:120:3'
+            rule: '+81..+120 h cada 3 h'
+    env:
+      ICON_EU_RUN_UTC: ${{ needs.select-run.outputs.run_utc }}
+      ICON_EU_BLOCK_ID: ${{ matrix.id }}
+      ICON_EU_STEP_SPEC: ${{ matrix.spec }}
+      ICON_EU_STEP_RULE: ${{ matrix.rule }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Generar superficie con ciclo fijado
+        run: python scripts/icon_eu_surface_operational_block.py
+
+      - name: Subir bloque de superficie
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-eu-operational-surface-${{ matrix.id }}
+          path: public-operational-${{ matrix.id }}/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
+
+  aloft:
+    needs: select-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: a1
+            spec: '0:3:1'
+            rule: '+0..+3 h cada 1 h'
+          - id: a2
+            spec: '4:15:1'
+            rule: '+4..+15 h cada 1 h'
+          - id: a3
+            spec: '16:27:1'
+            rule: '+16..+27 h cada 1 h'
+          - id: a4
+            spec: '28:39:1'
+            rule: '+28..+39 h cada 1 h'
+          - id: a5
+            spec: '40:51:1'
+            rule: '+40..+51 h cada 1 h'
+          - id: a6
+            spec: '52:63:1'
+            rule: '+52..+63 h cada 1 h'
+          - id: a7
+            spec: '64:75:1'
+            rule: '+64..+75 h cada 1 h'
+          - id: a8
+            spec: '76,77,78,81,84,87,90,93,96,99,102,105'
+            rule: '+76..+78 h cada 1 h; +81..+105 h cada 3 h'
+          - id: a9
+            spec: '108:120:3'
+            rule: '+108..+120 h cada 3 h'
+    env:
+      ICON_EU_RUN_UTC: ${{ needs.select-run.outputs.run_utc }}
+      ICON_EU_BLOCK_ID: ${{ matrix.id }}
+      ICON_EU_STEP_SPEC: ${{ matrix.spec }}
+      ICON_EU_STEP_RULE: ${{ matrix.rule }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Generar niveles y Jet con ciclo fijado
+        run: python scripts/icon_eu_aloft_operational_block.py
+
+      - name: Subir bloque de niveles y Jet
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-eu-operational-aloft-${{ matrix.id }}
+          path: public-operational-${{ matrix.id }}/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    needs: [select-run, surface, aloft]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ICON_EU_RUN_UTC: ${{ needs.select-run.outputs.run_utc }}
+      ICON_EU_MERGED_DIR: merged/icon-eu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar Pillow para validación
+        run: pip install Pillow
+
+      - name: Descargar selector
+        uses: actions/download-artifact@v4
+        with:
+          name: icon-eu-operational-selector
+          path: merged/icon-eu
+
+      - name: Descargar superficie
+        uses: actions/download-artifact@v4
+        with:
+          pattern: icon-eu-operational-surface-*
+          path: merged/icon-eu
+          merge-multiple: true
+
+      - name: Descargar niveles y Jet
+        uses: actions/download-artifact@v4
+        with:
+          pattern: icon-eu-operational-aloft-*
+          path: merged/icon-eu
+          merge-multiple: true
+
+      - name: Validar y crear manifiesto maestro 1488/1488
+        run: python scripts/icon_eu_operational_merge.py
+
+      - name: Subir producción ICON-EU unificada
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-operational
+          path: merged/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
