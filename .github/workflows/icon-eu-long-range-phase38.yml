@@ -1,0 +1,111 @@
+name: Fase 38 · ICON-EU largo alcance +120 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_long_range_phase38.py'
+      - '.github/workflows/icon-eu-long-range-phase38.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-long-range:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar ICON-EU +48 +72 +96 +120 h
+        run: python scripts/icon_eu_long_range_phase38.py
+
+      - name: Validar Fase 38 64/64
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          base=Path('public-icon38/icon-eu')
+          p=base/'manifest-icon-eu38.json'
+          data=json.loads(p.read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          files=list(base.rglob('*.webp'))
+
+          if data.get('status')!='ok':
+              raise SystemExit(f'Fase 38 no válida: {data.get("failure_notes",[])[:12]}')
+          if s.get('successes')!=64 or s.get('failures')!=0 or s.get('expected')!=64:
+              raise SystemExit(f'Resumen inesperado: {s}')
+          if len(files)!=64:
+              raise SystemExit(f'WebP={len(files)}, esperado=64')
+          if data.get('forecast_steps') != [48,72,96,120]:
+              raise SystemExit(f'Pasos inesperados: {data.get("forecast_steps")}')
+
+          expected_bounds={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          def check_bounds(b,label):
+              for k,v in expected_bounds.items():
+                  if abs(float(b.get(k,999))-v)>1e-6:
+                      raise SystemExit(f'Bounds incorrectos {label}: {b}')
+
+          for sk, recs in data.get('surface',{}).items():
+              required=('temperature_2m','wind_10m','cloud_cover_total','precipitation_total','rain_accumulation','snowfall_water_equivalent')
+              for key in required:
+                  rec=recs.get(key,{})
+                  if rec.get('status')!='ok' or not rec.get('image'):
+                      raise SystemExit(f'Superficie inválida {sk} {key}: {rec}')
+                  check_bounds(rec.get('bounds',{}),f'{sk} {key}')
+              pc=recs.get('precipitation_consistency',{})
+              if pc.get('status')!='ok' or float(pc.get('max_abs_difference_mm',999))>0.15:
+                  raise SystemExit(f'Consistencia precipitación inválida {sk}: {pc}')
+
+          height_limits={925:(0,2000),850:(500,2500),700:(1500,4500),500:(3500,7000),300:(6500,11500),250:(7500,13000),200:(9000,15000)}
+          for lk,recs in data.get('pressure',{}).items():
+              level=int(lk.replace('hpa',''))
+              for sk,rec in recs.items():
+                  if rec.get('status')!='ok' or not rec.get('image'):
+                      raise SystemExit(f'Presión inválida {lk} {sk}: {rec}')
+                  check_bounds(rec.get('bounds',{}),f'{lk} {sk}')
+                  r=rec.get('geopotential_height_range') or {}
+                  mean=(float(r['min'])+float(r['max']))/2
+                  lo,hi=height_limits[level]
+                  if not (lo<=mean<=hi):
+                      raise SystemExit(f'Altura sospechosa {lk} {sk}: {r}')
+
+          for lk,recs in data.get('jet',{}).items():
+              level=int(lk.replace('hpa',''))
+              for sk,rec in recs.items():
+                  if rec.get('status')!='ok' or not rec.get('image'):
+                      raise SystemExit(f'Jet inválido {lk} {sk}: {rec}')
+                  check_bounds(rec.get('bounds',{}),f'jet {lk} {sk}')
+                  wr=rec.get('wind_speed_range') or {}
+                  if float(wr.get('min',-1)) < 0 or float(wr.get('max',999)) > 500:
+                      raise SystemExit(f'Velocidad Jet sospechosa {lk} {sk}: {wr}')
+                  zr=rec.get('geopotential_height_range') or {}
+                  mean=(float(zr['min'])+float(zr['max']))/2
+                  lo,hi=height_limits[level]
+                  if not (lo<=mean<=hi):
+                      raise SystemExit(f'Altura Jet sospechosa {lk} {sk}: {zr}')
+
+          print('ICON-EU Fase 38 validada:',s,'WebP',len(files),'run',data.get('run_utc'))
+          PY
+
+      - name: Subir ICON-EU Fase 38
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase38
+          path: public-icon38/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
