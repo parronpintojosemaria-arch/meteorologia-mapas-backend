@@ -1,0 +1,117 @@
+name: Fase 46 · ICON-EU piloto niveles y Jet +0 a +3 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_aloft_production_phase46.py'
+      - '.github/workflows/icon-eu-aloft-production-phase46.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-aloft-production:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Generar 40 mapas de niveles y Jet
+        run: python scripts/icon_eu_aloft_production_phase46.py
+
+      - name: Validar Fase 46 40/40 y marca
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          base=Path('public-icon46/icon-eu')
+          p=base/'manifest-icon-eu46.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          s=d.get('summary',{})
+          steps=[0,1,2,3]
+          levels=[925,850,700,500,300,250,200]
+          jet=[300,250,200]
+          expected_bounds={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          expected_brand='Creado por José María Parrón Pinto (elrincondeteexplicoTube) - Datos oficiales: DWD Open Data'
+
+          if d.get('status')!='ok':
+              raise SystemExit(f'Fase 46 no está ok: {d.get("failure_notes",[])[:15]}')
+          if d.get('schema')!=46 or d.get('forecast_steps')!=steps:
+              raise SystemExit('Schema o pasos inesperados')
+          if d.get('pressure_levels_hpa')!=levels or d.get('jet_levels_hpa')!=jet:
+              raise SystemExit('Niveles presión/Jet inesperados')
+          if d.get('step_rule')!='+0..+3 h cada 1 h':
+              raise SystemExit(f'Regla temporal incorrecta: {d.get("step_rule")}')
+          if d.get('branding')!=expected_brand or d.get('branding_position')!='bottom-right':
+              raise SystemExit(f'Marca inesperada: {d.get("branding")}')
+          if s.get('successes')!=40 or s.get('failures')!=0 or s.get('expected')!=40 or s.get('map_files')!=40:
+              raise SystemExit(f'Resumen incorrecto: {s}')
+
+          webps=list(base.rglob('*.webp'))
+          if len(webps)!=40:
+              raise SystemExit(f'Número de WebP incorrecto: {len(webps)}')
+
+          sizes=set()
+          for lev in levels:
+              lk=f'{lev}hpa'
+              recs=d.get('levels',{}).get(lk,{})
+              for step in steps:
+                  sk=f'f{step:03d}'
+                  rec=recs.get(sk,{})
+                  if rec.get('status')!='ok':
+                      raise SystemExit(f'Presión {lk} {sk} no válida: {rec}')
+                  b=rec.get('bounds',{})
+                  for key,val in expected_bounds.items():
+                      if abs(float(b.get(key,9999))-val)>1e-6:
+                          raise SystemExit(f'Bounds incorrectos presión {lk} {sk}: {b}')
+                  zr=rec.get('geopotential_height_range') or {}
+                  if not zr or float(zr.get('min',-99999)) < -1000 or float(zr.get('max',99999)) > 20000:
+                      raise SystemExit(f'Geopotencial sospechoso {lk} {sk}: {zr}')
+                  rel=rec.get('image')
+                  path=Path('public-icon46')/rel if rel else None
+                  if path is None or not path.exists():
+                      raise SystemExit(f'Falta imagen presión {lk} {sk}: {rel}')
+                  with Image.open(path) as im:
+                      sizes.add(im.size)
+
+          for lev in jet:
+              lk=f'{lev}hpa'
+              recs=d.get('jet',{}).get(lk,{})
+              for step in steps:
+                  sk=f'f{step:03d}'
+                  rec=recs.get(sk,{})
+                  if rec.get('status')!='ok':
+                      raise SystemExit(f'Jet {lk} {sk} no válido: {rec}')
+                  wr=rec.get('wind_speed_range') or {}
+                  if not wr or float(wr.get('min',-1)) < -0.01 or float(wr.get('max',9999)) > 500:
+                      raise SystemExit(f'Jet físicamente sospechoso {lk} {sk}: {wr}')
+                  rel=rec.get('image')
+                  path=Path('public-icon46')/rel if rel else None
+                  if path is None or not path.exists():
+                      raise SystemExit(f'Falta imagen Jet {lk} {sk}: {rel}')
+                  with Image.open(path) as im:
+                      sizes.add(im.size)
+
+          if len(sizes)!=1:
+              raise SystemExit(f'Tamaños de mapa no uniformes: {sizes}')
+          print('ICON-EU Fase 46 validada:',s,'run',d.get('run_utc'),'size',next(iter(sizes)))
+          print('Marca:',d.get('branding'))
+          PY
+
+      - name: Subir artefacto Fase 46
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase46
+          path: public-icon46/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
