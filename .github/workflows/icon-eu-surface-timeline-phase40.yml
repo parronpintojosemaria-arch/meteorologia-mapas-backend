@@ -1,0 +1,72 @@
+name: Fase 40 · ICON-EU superficie completa +120 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_surface_timeline_phase40.py'
+      - '.github/workflows/icon-eu-surface-timeline-phase40.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-surface-timeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validar 9 campos x 93 pasos
+        run: python scripts/icon_eu_surface_timeline_phase40.py
+
+      - name: Validar Fase 40 837/837
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p=Path('public-icon40/icon-eu/manifest-icon-eu40.json')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          expected_steps=list(range(0,79))+list(range(81,121,3))
+
+          if data.get('status')!='ok':
+              raise SystemExit(f'Fase 40 no válida: {data.get("failure_notes",[])[:12]}')
+          if data.get('expected_steps') != expected_steps or data.get('expected_step_count') != 93:
+              raise SystemExit('Calendario temporal de Fase 40 incorrecto')
+          if s.get('field_count') != 9 or s.get('steps_per_field') != 93:
+              raise SystemExit(f'Resumen inesperado: {s}')
+          if s.get('successes') != 837 or s.get('expected') != 837 or s.get('failures') != 0:
+              raise SystemExit(f'Fase 40 no llega a 837/837: {s}')
+
+          required={
+              'temperature_2m','wind_u_10m','wind_v_10m','cloud_cover_total',
+              'precipitation_total','rain_gsp','rain_con','snow_gsp','snow_con'
+          }
+          if set(data.get('fields',{})) != required:
+              raise SystemExit(f'Campos inesperados: {set(data.get("fields",{}))}')
+
+          for key, rec in data['fields'].items():
+              if rec.get('status')!='ok' or rec.get('published_step_count_0_120')!=93:
+                  raise SystemExit(f'Campo incompleto {key}: {rec}')
+              if rec.get('missing_expected_steps') or rec.get('unexpected_steps_0_120'):
+                  raise SystemExit(f'Calendario distinto {key}: {rec}')
+
+          print('ICON-EU Fase 40 validada:',s,'run',data.get('run_utc'))
+          PY
+
+      - name: Subir diagnóstico Fase 40
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase40
+          path: public-icon40/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
