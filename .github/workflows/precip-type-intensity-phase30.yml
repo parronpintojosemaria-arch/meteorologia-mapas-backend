@@ -1,0 +1,96 @@
+name: Fase 30 · Tipo e intensidad de precipitación
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/precip_type_intensity_phase30.py"
+      - ".github/workflows/precip-type-intensity-phase30.yml"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-precipitation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Probar ECMWF ptype + tprate
+        run: python scripts/precip_type_intensity_phase30.py ecmwf
+      - name: Validar ECMWF
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('public-phase30/ecmwf/manifest-phase30-ecmwf.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          s=d.get('summary',{})
+          if d.get('status')!='ok' or s.get('successes')!=6 or s.get('failures')!=0 or s.get('expected')!=6:
+              raise SystemExit(f'ECMWF Fase 30 inválida: {s}')
+          for step in ('f003','f024','f072'):
+              for var in ('precipitation_rate','precipitation_type'):
+                  r=d['steps'][step][var]
+                  if r.get('status')!='ok':
+                      raise SystemExit(f'ECMWF {step} {var} no válido')
+          print('ECMWF Fase 30: 6/6')
+          PY
+      - name: Subir ECMWF
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-ecmwf-fase30-precip-type-rate
+          path: public-phase30/ecmwf
+          retention-days: 7
+
+  gfs-precipitation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Probar GFS PRATE + categorías
+        run: python scripts/precip_type_intensity_phase30.py gfs
+      - name: Validar GFS
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('public-phase30/gfs/manifest-phase30-gfs.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          s=d.get('summary',{})
+          if d.get('status')!='ok' or s.get('successes')!=6 or s.get('failures')!=0 or s.get('expected')!=6:
+              raise SystemExit(f'GFS Fase 30 inválida: {s}')
+          for step in ('f003','f024','f072'):
+              for var in ('precipitation_rate','precipitation_type'):
+                  r=d['steps'][step][var]
+                  if r.get('status')!='ok':
+                      raise SystemExit(f'GFS {step} {var} no válido')
+          print('GFS Fase 30: 6/6')
+          PY
+      - name: Subir GFS
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-gfs-fase30-precip-type-rate
+          path: public-phase30/gfs
+          retention-days: 7
