@@ -1,0 +1,74 @@
+name: Fase 36 · ICON-EU niveles de presión y Jet
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/icon_eu_pressure_jet_phase36.py"
+      - "scripts/icon_eu_surface_phase35.py"
+      - "requirements.txt"
+      - ".github/workflows/icon-eu-pressure-jet-phase36.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-pressure-jet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar 7 niveles y Jet 300 250 200 hPa
+        run: python scripts/icon_eu_pressure_jet_phase36.py
+      - name: Validar ICON-EU 30/30 y alturas físicas
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('public-icon36/icon-eu')
+          data=json.loads((base/'manifest-icon-eu36.json').read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          files=list(base.rglob('*.webp'))
+          if data.get('status')!='ok' or s.get('successes')!=30 or s.get('failures')!=0 or s.get('expected')!=30:
+              raise SystemExit(f'ICON-EU niveles/Jet incompleto: status={data.get("status")} summary={s}')
+          if len(files)!=30:
+              raise SystemExit(f'ICON-EU niveles/Jet WebP={len(files)}, esperado=30')
+          expected={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          height_limits={925:(0,2000),850:(500,2500),700:(1500,4500),500:(3500,7000),300:(6500,11500),250:(7500,13000),200:(9000,15000)}
+          for group_name in ('levels','jet'):
+              for lk,recs in data.get(group_name,{}).items():
+                  level=int(lk.replace('hpa',''))
+                  for sk,rec in recs.items():
+                      if rec.get('status')!='ok' or not rec.get('image'):
+                          raise SystemExit(f'{group_name} {lk} {sk} inválido: {rec}')
+                      b=rec.get('bounds',{})
+                      for k,v in expected.items():
+                          if abs(float(b.get(k,999))-v)>1e-6:
+                              raise SystemExit(f'Bounds incorrectos {group_name} {lk} {sk}: {b}')
+                      r=rec.get('geopotential_height_range') or {}
+                      if not r:
+                          raise SystemExit(f'Falta rango geopotencial {group_name} {lk} {sk}')
+                      mean=(float(r['min'])+float(r['max']))/2
+                      lo,hi=height_limits[level]
+                      if not (lo<=mean<=hi):
+                          raise SystemExit(f'Altura sospechosa {group_name} {lk} {sk}: {r}')
+          print('ICON-EU niveles y Jet validados:',s,'WebP',len(files))
+          PY
+      - name: Subir ICON-EU niveles y Jet
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase36
+          path: public-icon36/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
