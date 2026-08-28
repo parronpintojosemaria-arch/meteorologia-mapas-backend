@@ -1,0 +1,98 @@
+name: Fase 44 · ICON-EU producción superficie +49 a +78 h
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_surface_production_phase44.py'
+      - '.github/workflows/icon-eu-surface-production-phase44.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-surface-production:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Generar 180 mapas de superficie
+        run: python scripts/icon_eu_surface_production_phase44.py
+
+      - name: Validar Fase 44 180/180 y marca
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          base=Path('public-icon44/icon-eu')
+          p=base/'manifest-icon-eu44.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          s=d.get('summary',{})
+          steps=list(range(49,79))
+          products=[
+              'temperature_2m','wind_10m','cloud_cover_total',
+              'precipitation_total','rain_accumulation','snowfall_water_equivalent'
+          ]
+          expected_bounds={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          expected_brand='Creado por José María Parrón Pinto (elrincondeteexplicoTube) - Datos oficiales: DWD Open Data'
+
+          if d.get('status')!='ok':
+              raise SystemExit(f'Fase 44 no está ok: {d.get("failure_notes",[])[:15]}')
+          if d.get('schema')!=44 or d.get('forecast_steps')!=steps or d.get('products')!=products:
+              raise SystemExit('Schema, pasos o productos inesperados')
+          if d.get('step_rule')!='+49..+78 h cada 1 h':
+              raise SystemExit(f'Regla temporal incorrecta: {d.get("step_rule")}')
+          if d.get('branding')!=expected_brand or d.get('branding_position')!='bottom-right':
+              raise SystemExit(f'Marca inesperada: {d.get("branding")}')
+          if s.get('successes')!=180 or s.get('failures')!=0 or s.get('expected')!=180 or s.get('map_files')!=180:
+              raise SystemExit(f'Resumen incorrecto: {s}')
+
+          webps=list(base.rglob('*.webp'))
+          if len(webps)!=180:
+              raise SystemExit(f'Número de WebP incorrecto: {len(webps)}')
+
+          sizes=set()
+          for step in steps:
+              sk=f'f{step:03d}'
+              recs=d.get('surface',{}).get(sk,{})
+              for product in products:
+                  rec=recs.get(product,{})
+                  if rec.get('status')!='ok':
+                      raise SystemExit(f'{product} {sk} no válido: {rec}')
+                  b=rec.get('bounds',{})
+                  for key,val in expected_bounds.items():
+                      if abs(float(b.get(key,9999))-val)>1e-6:
+                          raise SystemExit(f'Bounds incorrectos {product} {sk}: {b}')
+                  rel=rec.get('image')
+                  path=Path('public-icon44')/rel if rel else None
+                  if path is None or not path.exists():
+                      raise SystemExit(f'Falta imagen {product} {sk}: {rel}')
+                  with Image.open(path) as im:
+                      sizes.add(im.size)
+              pc=recs.get('precipitation_consistency',{})
+              if pc.get('status')!='ok':
+                  raise SystemExit(f'Consistencia precipitación no válida {sk}: {pc}')
+
+          if len(sizes)!=1:
+              raise SystemExit(f'Tamaños de mapa no uniformes: {sizes}')
+          print('ICON-EU Fase 44 validada:',s,'run',d.get('run_utc'),'size',next(iter(sizes)))
+          print('Marca:',d.get('branding'))
+          PY
+
+      - name: Subir artefacto Fase 44
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase44
+          path: public-icon44/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
