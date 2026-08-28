@@ -1,0 +1,66 @@
+name: Fase 31 · Precipitación hasta horizonte máximo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/precip_max_horizon_phase31.py"
+      - "scripts/precip_type_intensity_phase30.py"
+      - "scripts/ecmwf_surface_phase2.py"
+      - "scripts/gfs_temperature_phase20.py"
+      - "scripts/gfs_surface_phase21.py"
+      - "requirements.txt"
+      - ".github/workflows/precip-max-horizon-phase31.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-max-precip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Probar ECMWF ptype + tprate en +360 h
+        run: python scripts/precip_max_horizon_phase31.py ecmwf
+      - name: Subir ECMWF
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-ecmwf-fase31-precip-max360
+          path: public-phase30/ecmwf
+          retention-days: 7
+
+  gfs-max-precip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Probar GFS PRATE + categorías en +384 h
+        run: python scripts/precip_max_horizon_phase31.py gfs
+      - name: Subir GFS
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-gfs-fase31-precip-max384
+          path: public-phase30/gfs
+          retention-days: 7
