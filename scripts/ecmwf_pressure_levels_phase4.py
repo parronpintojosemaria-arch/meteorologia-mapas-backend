@@ -12,6 +12,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from ecmwf.opendata import Client
@@ -186,6 +187,7 @@ def render_composite(t_c, gh_m, level, bounds, out: Path):
 
     tmp = out.with_suffix(".png")
     out.parent.mkdir(parents=True, exist_ok=True)
+    brand_figure(fig, tmp)
     fig.savefig(tmp, transparent=True, pad_inches=0)
     plt.close(fig)
 

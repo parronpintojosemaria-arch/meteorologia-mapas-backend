@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
@@ -211,6 +212,7 @@ def render_composite(t_c, gh_m, level, bounds, out):
     ax.set_ylim(h - 0.5, -0.5)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".png")
+    brand_figure(fig, tmp)
     fig.savefig(tmp, transparent=True, pad_inches=0)
     plt.close(fig)
     with Image.open(tmp) as img:

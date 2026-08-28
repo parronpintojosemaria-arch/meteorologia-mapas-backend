@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from ecmwf.opendata import Client
@@ -167,6 +168,7 @@ def render_jet(speed_kmh, gh_m, bounds, out: Path):
 
     tmp = out.with_suffix(".png")
     out.parent.mkdir(parents=True, exist_ok=True)
+    brand_figure(fig, tmp)
     fig.savefig(tmp, transparent=True, pad_inches=0)
     plt.close(fig)
 

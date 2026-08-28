@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import numpy as np
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
@@ -130,7 +131,8 @@ def render_types(values, bounds, out: Path, palette):
     for code, color in palette.items():
         rgba[projected == int(code)] = color
     out.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgba, "RGBA").save(out, "WEBP", quality=90, method=6)
+    _brand_img = brand_image(Image.fromarray(rgba, "RGBA"), out)
+    _brand_img.save(out, "WEBP", quality=90, method=6)
 
 
 def rate_to_mmh(values, units):

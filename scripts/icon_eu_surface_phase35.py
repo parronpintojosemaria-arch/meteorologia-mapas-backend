@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 import numpy as np
 import xarray as xr
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
@@ -168,7 +169,8 @@ def render(values, bounds, out: Path, cmap: str, vmin: float, vmax: float, alpha
         mask &= dst > 0.01
     rgba[..., 3] = np.where(mask, alpha, 0).astype("uint8")
     out.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgba, "RGBA").save(out, "WEBP", quality=88, method=6)
+    _brand_img = brand_image(Image.fromarray(rgba, "RGBA"), out)
+    _brand_img.save(out, "WEBP", quality=88, method=6)
 
 
 def record(out, bounds, units, values, urls, extra=None):

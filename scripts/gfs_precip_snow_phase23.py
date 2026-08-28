@@ -19,6 +19,7 @@ from eccodes import (
     codes_release,
 )
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
@@ -196,6 +197,7 @@ def render(values, bounds, out, cmap_name, vmin, vmax, alpha=0.84):
     rgba[..., 3] = np.where(np.isfinite(projected), alpha, 0.0)
     img = Image.fromarray((rgba * 255).astype("uint8"), mode="RGBA")
     out.parent.mkdir(parents=True, exist_ok=True)
+    img = brand_image(img, out)
     img.save(out, "WEBP", quality=88, method=6)
     return projected
 

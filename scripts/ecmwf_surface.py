@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from ecmwf.opendata import Client
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -55,6 +56,7 @@ def main():
     ax=fig.add_axes([0,0,1,1]); ax.axis("off")
     ax.imshow(values,origin="upper",cmap="turbo",vmin=-30,vmax=45,
               interpolation="bilinear",aspect="auto")
+    brand_figure(fig, png)
     fig.savefig(png,transparent=True,bbox_inches="tight",pad_inches=0)
     plt.close(fig)
     with Image.open(png) as img:

@@ -13,6 +13,7 @@ import xarray as xr
 import matplotlib
 matplotlib.use("Agg")
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
@@ -146,6 +147,7 @@ def render(values_c, bounds, out):
     rgba[..., 3] = np.where(np.isfinite(projected), 0.82, 0.0)
     img = Image.fromarray((rgba * 255).astype("uint8"), mode="RGBA")
     out.parent.mkdir(parents=True, exist_ok=True)
+    img = brand_image(img, out)
     img.save(out, "WEBP", quality=88, method=6)
     return projected
 

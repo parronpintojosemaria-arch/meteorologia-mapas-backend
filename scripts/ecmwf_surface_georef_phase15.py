@@ -12,6 +12,7 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import colors
 from PIL import Image
+from map_branding import brand_image, brand_figure
 from rasterio.transform import from_bounds
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from ecmwf.opendata import Client
@@ -133,7 +134,8 @@ def save_rgba(values, bounds, out: Path, cmap, vmin, vmax, alpha=205, zero_trans
     if zero_transparent:
         rgba[..., 3] = np.where((projected <= 0.05) | mask, 0, rgba[..., 3]).astype("uint8")
     out.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgba, "RGBA").save(out, "WEBP", quality=86, method=6)
+    _brand_img = brand_image(Image.fromarray(rgba, "RGBA"), out)
+    _brand_img.save(out, "WEBP", quality=86, method=6)
 
 
 def finite_range(values):
