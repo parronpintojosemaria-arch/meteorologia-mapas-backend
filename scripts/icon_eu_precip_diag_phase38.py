@@ -52,6 +52,26 @@ def location_from_index(bounds, shape, i, j):
     return {"lat": round(lat, 5), "lon": round(lon, 5)}
 
 
+def point_record(bounds, shape, arrays, total, parts, signed, absres, i, j):
+    t = float(total[i, j]); p = float(parts[i, j]); r = float(signed[i, j])
+    rel = (abs(r) / t * 100.0) if t > 0.01 else None
+    h, w = shape
+    return {
+        "index": {"row": int(i), "col": int(j)},
+        "distance_to_grid_edge_cells": int(min(i, j, h - 1 - i, w - 1 - j)),
+        "location": location_from_index(bounds, shape, i, j),
+        "total_precip_mm": round(t, 6),
+        "sum_components_mm": round(p, 6),
+        "signed_difference_mm": round(r, 6),
+        "abs_difference_mm": round(float(absres[i, j]), 6),
+        "relative_to_total_percent": None if rel is None else round(rel, 6),
+        "rain_gsp_mm": round(float(arrays["rain_gsp"][i, j]), 6),
+        "rain_con_mm": round(float(arrays["rain_con"][i, j]), 6),
+        "snow_gsp_mm": round(float(arrays["snow_gsp"][i, j]), 6),
+        "snow_con_mm": round(float(arrays["snow_con"][i, j]), 6),
+    }
+
+
 def stats_for(step: int, run_dt):
     arrays = {}
     metas = {}
@@ -66,9 +86,8 @@ def stats_for(step: int, run_dt):
         if bounds is None:
             bounds = b
             shape = mm.shape
-        else:
-            if mm.shape != shape:
-                raise RuntimeError(f"Malla distinta para {key}: {mm.shape} frente a {shape}")
+        elif mm.shape != shape:
+            raise RuntimeError(f"Malla distinta para {key}: {mm.shape} frente a {shape}")
         arrays[key] = mm
         metas[key] = {"url": url, "grib": grib_meta(path), "range_mm": s35.finite_range(mm)}
 
@@ -79,14 +98,11 @@ def stats_for(step: int, run_dt):
     finite = np.isfinite(absres)
     vals = absres[finite]
     signed_vals = signed[finite]
-
     if not vals.size:
         raise RuntimeError("Sin residuos válidos")
 
     flat_index = int(np.nanargmax(absres))
     i, j = np.unravel_index(flat_index, absres.shape)
-    t = float(total[i, j]); p = float(parts[i, j]); r = float(signed[i, j])
-    rel = (abs(r) / t * 100.0) if t > 0.01 else None
 
     q = {str(x): round(float(np.nanpercentile(vals, x)), 6) for x in (50, 90, 95, 99, 99.9, 100)}
     counts = {str(th): int(np.count_nonzero(vals > th)) for th in (0.05, 0.1, 0.15, 0.25, 0.5, 1.0)}
@@ -97,6 +113,19 @@ def stats_for(step: int, run_dt):
     wet_abs = absres[wet]
     wet_rel = np.where(wet, absres / np.maximum(total, 1e-6) * 100.0, np.nan)
     wet_rel_vals = wet_rel[np.isfinite(wet_rel)]
+
+    outlier_idx = np.argwhere(finite & (absres > 0.15))
+    outliers = [point_record(bounds, shape, arrays, total, parts, signed, absres, int(ii), int(jj)) for ii, jj in outlier_idx]
+    outliers.sort(key=lambda x: x["abs_difference_mm"], reverse=True)
+
+    edge_mask = np.zeros(shape, dtype=bool)
+    edge_width = 4
+    edge_mask[:edge_width, :] = True
+    edge_mask[-edge_width:, :] = True
+    edge_mask[:, :edge_width] = True
+    edge_mask[:, -edge_width:] = True
+    interior = finite & (~edge_mask)
+    interior_vals = absres[interior]
 
     return {
         "step": step,
@@ -111,17 +140,15 @@ def stats_for(step: int, run_dt):
             "percentiles_abs_mm": q,
             "cells_above_abs_threshold": counts,
             "percent_cells_above_abs_threshold": fractions,
-            "max_point": {
-                "location": location_from_index(bounds, shape, i, j),
-                "total_precip_mm": round(t, 6),
-                "sum_components_mm": round(p, 6),
-                "signed_difference_mm": round(r, 6),
-                "abs_difference_mm": round(abs(r), 6),
-                "relative_to_total_percent": None if rel is None else round(rel, 6),
-                "rain_gsp_mm": round(float(arrays["rain_gsp"][i, j]), 6),
-                "rain_con_mm": round(float(arrays["rain_con"][i, j]), 6),
-                "snow_gsp_mm": round(float(arrays["snow_gsp"][i, j]), 6),
-                "snow_con_mm": round(float(arrays["snow_con"][i, j]), 6),
+            "max_point": point_record(bounds, shape, arrays, total, parts, signed, absres, i, j),
+            "outliers_above_0_15mm": outliers,
+            "all_outliers_within_4_cell_edge": bool(outliers and all(x["distance_to_grid_edge_cells"] < edge_width for x in outliers)),
+            "interior_excluding_4_cell_edge": {
+                "cells": int(interior_vals.size),
+                "mean_abs_mm": None if not interior_vals.size else round(float(np.nanmean(interior_vals)), 8),
+                "p99_9_abs_mm": None if not interior_vals.size else round(float(np.nanpercentile(interior_vals, 99.9)), 8),
+                "max_abs_mm": None if not interior_vals.size else round(float(np.nanmax(interior_vals)), 8),
+                "cells_above_0_15mm": int(np.count_nonzero(interior_vals > 0.15)),
             },
             "wet_cells_total_ge_1mm": int(np.count_nonzero(wet)),
             "wet_cells_mean_abs_mm": None if not wet_abs.size else round(float(np.nanmean(wet_abs)), 8),
@@ -135,7 +162,7 @@ def stats_for(step: int, run_dt):
 def main():
     run_dt = h37.choose_run()
     data = {
-        "schema": "38-precip-diagnostic",
+        "schema": "38-precip-diagnostic-v2",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "model": "DWD ICON-EU",
         "run_utc": run_dt.isoformat(),
@@ -148,14 +175,13 @@ def main():
         rr = rec["residual"]
         print(
             f"f{step:03d}: mean_abs={rr['mean_abs_mm']} mm, "
-            f"p99={rr['percentiles_abs_mm']['99']} mm, "
             f"p99.9={rr['percentiles_abs_mm']['99.9']} mm, "
             f"max={rr['percentiles_abs_mm']['100']} mm, "
-            f"cells>0.15={rr['cells_above_abs_threshold']['0.15']}"
+            f"cells>0.15={rr['cells_above_abs_threshold']['0.15']}, "
+            f"all_edge={rr['all_outliers_within_4_cell_edge']}, "
+            f"interior_max={rr['interior_excluding_4_cell_edge']['max_abs_mm']} mm"
         )
-        print("max_point:", json.dumps(rr["max_point"], ensure_ascii=False))
-        for key, meta in rec["fields"].items():
-            print(key, json.dumps(meta["grib"], ensure_ascii=False))
+        print("outliers:", json.dumps(rr["outliers_above_0_15mm"], ensure_ascii=False))
 
     out = PUBLIC / "manifest-icon-eu38-precip-diagnostic.json"
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
