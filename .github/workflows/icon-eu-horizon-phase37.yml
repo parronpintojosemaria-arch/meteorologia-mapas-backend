@@ -1,0 +1,60 @@
+name: Fase 37 · ICON-EU horizonte temporal oficial
+
+on:
+  push:
+    paths:
+      - 'scripts/icon_eu_horizon_phase37.py'
+      - '.github/workflows/icon-eu-horizon-phase37.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-horizon:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Comprobar +48 a +120 h y cadencia
+        run: python scripts/icon_eu_horizon_phase37.py
+
+      - name: Validar horizonte ICON-EU
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('public-icon37/icon-eu/manifest-icon-eu37.json')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          if data.get('status')!='ok':
+              raise SystemExit(f'Fase 37 no válida: {data.get("failure_notes",[])}')
+          if s.get('successes')!=41 or s.get('failures')!=0 or s.get('expected')!=41:
+              raise SystemExit(f'Resumen inesperado: {s}')
+          if data.get('official_horizon_hours')!=120:
+              raise SystemExit('Horizonte distinto de 120 h')
+          for step in ('f048','f072','f078','f081','f096','f120'):
+              recs=data.get('probes',{}).get(step,{})
+              if len(recs)!=6 or not all(r.get('available') for r in recs.values()):
+                  raise SystemExit(f'Paso incompleto {step}: {recs}')
+          cc=data.get('cadence_checks',{})
+          if not cc or not all(r.get('matches_expected') for r in cc.values()):
+              raise SystemExit(f'Cadencia no validada: {cc}')
+          print('ICON-EU horizonte validado:',s,'run',data.get('run_utc'))
+          PY
+
+      - name: Subir diagnóstico Fase 37
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase37
+          path: public-icon37/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
