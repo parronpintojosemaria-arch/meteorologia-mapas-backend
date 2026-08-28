@@ -1,0 +1,67 @@
+name: Fase 35 · ICON-EU superficie oficial
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/icon_eu_surface_phase35.py"
+      - "requirements.txt"
+      - ".github/workflows/icon-eu-surface-phase35.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar ICON-EU viento nubosidad precipitación lluvia y nieve
+        run: python scripts/icon_eu_surface_phase35.py
+      - name: Validar ICON-EU 15/15 y coherencia de precipitación
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('public-icon35/icon-eu')
+          data=json.loads((base/'manifest-icon-eu35.json').read_text(encoding='utf-8'))
+          s=data.get('summary',{})
+          files=list(base.rglob('*.webp'))
+          if data.get('status')!='ok' or s.get('successes')!=15 or s.get('failures')!=0 or s.get('expected')!=15:
+              raise SystemExit(f'ICON-EU superficie incompleta: status={data.get("status")} summary={s}')
+          if len(files)!=15:
+              raise SystemExit(f'ICON-EU superficie WebP={len(files)}, esperado=15')
+          expected={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          for sk,recs in data.get('steps',{}).items():
+              for name,rec in recs.items():
+                  if name=='precipitation_consistency':
+                      if rec.get('status')!='ok' or rec.get('max_abs_difference_mm',999)>0.15:
+                          raise SystemExit(f'Coherencia precipitación no válida {sk}: {rec}')
+                      continue
+                  if rec.get('status')!='ok' or not rec.get('image'):
+                      raise SystemExit(f'{sk} {name} inválido: {rec}')
+                  b=rec.get('bounds',{})
+                  for k,v in expected.items():
+                      if abs(float(b.get(k,999))-v)>1e-6:
+                          raise SystemExit(f'Bounds incorrectos {sk} {name}: {b}')
+          print('ICON-EU superficie validada:',s,'WebP',len(files))
+          PY
+      - name: Subir ICON-EU superficie
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorologia-mapas-icon-eu-fase35
+          path: public-icon35/icon-eu/
+          if-no-files-found: error
+          retention-days: 7
