@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import precip_type_intensity_phase30 as p30
+import gfs_precip_batch_phase57 as g57
 
 ECMWF_STEPS = (3, 6, 9, 12, 18, 24, 36, 48, 60, 72, 96, 120, 144, 192, 240, 288, 336, 360)
 GFS_STEPS = ECMWF_STEPS + (384,)
@@ -81,7 +82,9 @@ def main() -> None:
         validate(model, ECMWF_STEPS)
     else:
         p30.STEPS = GFS_STEPS
-        p30.gfs_main()
+        # GFS usa el run_utc ya validado por timeline_phase29 y descarga
+        # PRATE+CRAIN+CSNOW+CFRZR+CICEP agrupados para no saturar NOMADS.
+        g57.generate(GFS_STEPS)
         validate(model, GFS_STEPS)
 
 
