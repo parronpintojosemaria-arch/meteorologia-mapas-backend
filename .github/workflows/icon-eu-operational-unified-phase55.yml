@@ -9,6 +9,8 @@ on:
       - 'scripts/icon_eu_operational_merge.py'
       - '.github/workflows/icon-eu-operational-unified-phase55.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '15 4,10,16,22 * * *'
 
 permissions:
   contents: read
