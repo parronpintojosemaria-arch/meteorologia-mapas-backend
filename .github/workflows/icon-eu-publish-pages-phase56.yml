@@ -1,4 +1,4 @@
-name: Fase 56 · Publicación ICON-EU estable en GitHub Pages
+name: Fase 56 · Publicación unificada ICON-EU + ECMWF + GFS en GitHub Pages
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
+  group: pages
   cancel-in-progress: false
 
 jobs:
@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       source_run_id: ${{ steps.source.outputs.run_id }}
+      legacy_run_id: ${{ steps.legacy.outputs.run_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,40 +57,90 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.source.outputs.run_id }}
 
-      - name: Preparar sitio y latest.json
+      - name: Preparar ICON-EU y latest.json
         env:
           ICON_EU_SOURCE_DIR: download/icon-eu
-          ICON_EU_SITE_DIR: site
+          ICON_EU_SITE_DIR: site-build
           ICON_EU_SOURCE_WORKFLOW_RUN_ID: ${{ steps.source.outputs.run_id }}
         run: python scripts/icon_eu_publish_prepare_phase56.py
 
-      - name: Validar publicación 1488/1488 antes de Pages
+      - name: Localizar la última publicación ECMWF + GFS correcta
+        id: legacy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/publish-ecmwf-pages.yml/runs?status=success&per_page=20"
+          run_id=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api" | python -c "import json,sys; d=json.load(sys.stdin); runs=[r for r in d.get('workflow_runs',[]) if r.get('conclusion')=='success']; print(runs[0]['id'] if runs else '')")
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "ECMWF/GFS fuente: $run_id"
+
+      - name: Descargar ECMWF validado
+        uses: actions/download-artifact@v4
+        with:
+          name: pages-ecmwf-timeline
+          path: site-build/ecmwf
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.legacy.outputs.run_id }}
+
+      - name: Descargar GFS validado
+        uses: actions/download-artifact@v4
+        with:
+          name: pages-gfs-timeline
+          path: site-build/gfs
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.legacy.outputs.run_id }}
+
+      - name: Añadir visor común
+        run: |
+          cp site/index.html site-build/index.html
+          touch site-build/.nojekyll
+
+      - name: Validar publicación unificada antes de Pages
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          root=Path('site/icon-eu')
+          root=Path('site-build/icon-eu')
           d=json.loads((root/'latest.json').read_text(encoding='utf-8'))
           h=json.loads((root/'health.json').read_text(encoding='utf-8'))
           webps=list((root/'runs'/d['run_id']).rglob('*.webp'))
           expected_steps=list(range(0,79))+list(range(81,121,3))
+          if d.get('schema')!=56 or d.get('status')!='ok': raise SystemExit('ICON-EU latest.json inválido')
+          if d.get('forecast_steps')!=expected_steps or len(expected_steps)!=93: raise SystemExit('ICON-EU: 93 pasos incorrectos')
+          if d.get('summary',{}).get('total_maps')!=1488 or len(webps)!=1488: raise SystemExit(f'ICON-EU mapas incorrectos: {len(webps)}')
+          if h.get('maps')!=1488 or h.get('forecast_steps')!=93: raise SystemExit(f'ICON-EU health incorrecto: {h}')
 
-          if d.get('schema')!=56 or d.get('status')!='ok': raise SystemExit('latest.json inválido')
-          if d.get('forecast_steps')!=expected_steps or len(expected_steps)!=93: raise SystemExit('93 pasos incorrectos')
-          if d.get('summary',{}).get('total_maps')!=1488 or len(webps)!=1488: raise SystemExit(f'Mapas incorrectos: {len(webps)}')
-          if h.get('maps')!=1488 or h.get('forecast_steps')!=93: raise SystemExit(f'health.json incorrecto: {h}')
-          if d.get('source_workflow_run_id')!=int('${{ steps.source.outputs.run_id }}'): raise SystemExit('Run fuente no coincide')
-          print('Fase 56 preparada:', d['run_utc'], '93 pasos', len(webps), 'mapas', 'run fuente', d['source_workflow_run_id'])
+          expected={'ecmwf':259,'gfs':277}
+          for model,count in expected.items():
+              base=Path('site-build')/model
+              maps=list(base.rglob('*.webp'))
+              if len(maps)!=count: raise SystemExit(f'{model}: {len(maps)} mapas, esperados {count}')
+              main=json.loads((base/f'manifest-phase29-{model}.json').read_text(encoding='utf-8'))
+              precip=json.loads((base/f'manifest-phase30-{model}.json').read_text(encoding='utf-8'))
+              p32=json.loads((base/f'manifest-phase32-{model}.json').read_text(encoding='utf-8'))
+              if not (main.get('status')==precip.get('status')==p32.get('status')=='ok'):
+                  raise SystemExit(f'{model}: manifiestos no válidos')
+              if not (main.get('run_utc')==precip.get('run_utc')==p32.get('run_utc')):
+                  raise SystemExit(f'{model}: ciclos mezclados')
+          print('Pages unificado OK: ICON-EU 1488 + ECMWF 259 + GFS 277 mapas')
           PY
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Empaquetar sitio para GitHub Pages
+      - name: Empaquetar sitio completo para GitHub Pages
         uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: site-build
           retention-days: 1
 
   deploy:
@@ -99,6 +150,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
     steps:
-      - name: Publicar en GitHub Pages
+      - name: Publicar sitio meteorológico unificado
         id: deployment
         uses: actions/deploy-pages@v4
