@@ -7,9 +7,11 @@ on:
     paths:
       - "scripts/precip_timeline_phase32.py"
       - "scripts/precip_type_intensity_phase30.py"
+      - "scripts/gfs_precip_batch_phase57.py"
       - "scripts/ecmwf_surface_phase2.py"
       - "scripts/gfs_temperature_phase20.py"
       - "scripts/gfs_surface_phase21.py"
+      - "scripts/max_horizon_phase28.py"
       - "requirements.txt"
       - ".github/workflows/precip-timeline-phase32.yml"
 
@@ -68,6 +70,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Fijar una pasada GFS completa hasta +384 h
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'scripts')
+          import max_horizon_phase28 as p28
+          run_dt=p28.pick_gfs_run()
+          base=Path('public-phase29/gfs')
+          base.mkdir(parents=True,exist_ok=True)
+          (base/'manifest-phase29-gfs.json').write_text(json.dumps({
+              'schema':29,
+              'model':'NOAA GFS',
+              'data_provider':'NOAA/NCEP NOMADS',
+              'run_utc':run_dt.isoformat(),
+              'horizon_hours':384,
+              'status':'ok'
+          },indent=2),encoding='utf-8')
+          print('Pasada GFS fijada para Fase 32:',run_dt.isoformat())
+          PY
       - name: Generar GFS tipo e intensidad hasta +384 h
         run: python scripts/precip_timeline_phase32.py gfs
       - name: Verificar GFS 38/38
