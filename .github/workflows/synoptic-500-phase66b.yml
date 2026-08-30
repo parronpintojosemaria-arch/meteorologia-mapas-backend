@@ -1,0 +1,107 @@
+name: Fase 66B · 500 hPa sinóptico Atlántico Norte
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/synoptic_500_phase66b.py"
+      - "scripts/ecmwf_pressure_levels_phase4.py"
+      - "scripts/gfs_pressure_phase24.py"
+      - "scripts/map_branding.py"
+      - "requirements.txt"
+      - ".github/workflows/synoptic-500-phase66b.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-500-synoptic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66B
+        run: python -m py_compile scripts/synoptic_500_phase66b.py
+      - name: Generar ECMWF 500 hPa sinóptico
+        run: python scripts/synoptic_500_phase66b.py ecmwf
+      - name: Validar ECMWF 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('experimental-phase66b/ecmwf/manifest-phase66b.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['status']=='ok', d
+          assert d['level_hpa']==500 and d['steps']==[0,24,72], d
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}, d['requested_bounds']
+          assert d['summary']=={'successes':3,'failures':0,'expected':3}, d['summary']
+          for rec in d['maps'].values():
+              assert rec['status']=='ok', rec
+              img=Path('experimental-phase66b')/rec['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+              assert rec['size']['width']>=600 and rec['size']['height']>=600, rec['size']
+          print('ECMWF Fase 66B validada 3/3 · ciclo',d['run_utc'])
+          PY
+      - name: Subir ECMWF 66B
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66b-ecmwf-500-synoptic
+          path: experimental-phase66b/ecmwf
+          retention-days: 7
+          if-no-files-found: error
+
+  gfs-500-synoptic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66B
+        run: python -m py_compile scripts/synoptic_500_phase66b.py
+      - name: Generar GFS 500 hPa sinóptico
+        run: python scripts/synoptic_500_phase66b.py gfs
+      - name: Validar GFS 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('experimental-phase66b/gfs/manifest-phase66b.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['status']=='ok', d
+          assert d['level_hpa']==500 and d['steps']==[0,24,72], d
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}, d['requested_bounds']
+          assert d['summary']=={'successes':3,'failures':0,'expected':3}, d['summary']
+          for rec in d['maps'].values():
+              assert rec['status']=='ok', rec
+              img=Path('experimental-phase66b')/rec['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+              assert rec['size']['width']>=600 and rec['size']['height']>=600, rec['size']
+          print('GFS Fase 66B validada 3/3 · ciclo',d['run_utc'])
+          PY
+      - name: Subir GFS 66B
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66b-gfs-500-synoptic
+          path: experimental-phase66b/gfs
+          retention-days: 7
+          if-no-files-found: error
