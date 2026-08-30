@@ -11,6 +11,7 @@ on:
     paths:
       - ".github/workflows/pages-quality-phase65.yml"
       - "scripts/pages_quality_phase65.py"
+      - "scripts/publish_synoptic_500_phase66d.py"
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
   quality-and-deploy:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -163,15 +164,79 @@ jobs:
           print('Tamaño sitio MiB:',round(site_bytes/1024/1024,1))
           PY
 
+      - name: Instalar dependencias Fase 66D
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validar sintaxis Fase 66D
+        run: python -m py_compile scripts/publish_synoptic_500_phase66d.py
+
+      - name: Generar Fase 66D · 500 hPa sinóptico con la misma pasada
+        run: python scripts/publish_synoptic_500_phase66d.py --root _site
+
+      - name: Validar Fase 66D y legado intacto
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path('_site')
+          before=Path('_base-original.sha256').read_text(encoding='ascii').strip()
+          legacy=sorted(
+              p for model in ('ecmwf','gfs','icon-eu')
+              for p in (root/model).rglob('*.webp')
+              if '500hpa_synoptic' not in p.parts
+          )
+          if len(legacy)!=2116:
+              raise SystemExit(f'El legado dejó de tener 2116 mapas: {len(legacy)}')
+          h=hashlib.sha256()
+          for p in legacy:
+              rel=p.relative_to(root).as_posix().encode('utf-8')
+              h.update(rel+b'\0')
+              with p.open('rb') as f:
+                  for chunk in iter(lambda:f.read(1024*1024),b''):
+                      h.update(chunk)
+          after=h.hexdigest()
+          if before!=after:
+              raise SystemExit(f'F66D alteró mapas anteriores: antes={before} después={after}')
+
+          configs={
+              'ecmwf':([0,12,24,48,72,96,120,144,192,240,288,336,360],13),
+              'gfs':([0,12,24,48,72,96,120,144,192,240,288,336,360,384],14),
+          }
+          total=0
+          for model,(steps,count) in configs.items():
+              main=json.loads((root/model/f'manifest-phase29-{model}.json').read_text(encoding='utf-8'))
+              syn=json.loads((root/model/'manifest-phase66d-500hpa.json').read_text(encoding='utf-8'))
+              assert syn['schema']==66 and syn['phase']=='66D' and syn['status']=='ok', (model,syn.get('status'))
+              assert syn['run_utc']==main['run_utc'], (model,syn['run_utc'],main['run_utc'])
+              assert syn['steps']==steps and syn['summary']=={'successes':count,'failures':0,'expected':count}
+              assert syn['published_bounds']=={'west':-60.125,'east':50.125,'south':19.875,'north':84.125}
+              imgs=list((root/model/'500hpa_synoptic').glob('f*.webp'))
+              assert len(imgs)==count, (model,len(imgs),count)
+              for step in steps:
+                  p=root/model/'500hpa_synoptic'/f'f{step:03d}.webp'
+                  assert p.is_file() and p.stat().st_size>1000, p
+              total+=count
+          if total!=27:
+              raise SystemExit(f'F66D no contiene 27 mapas: {total}')
+          site_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          if site_bytes>950*1024*1024:
+              raise SystemExit(f'Sitio final demasiado grande: {site_bytes/1024/1024:.1f} MiB')
+          print('Fase 66D validada: 27/27 mapas sinópticos')
+          print('Legado 2116/2116 intacto SHA-256:',after)
+          print('Tamaño final MiB:',round(site_bytes/1024/1024,1))
+          PY
+
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Subir sitio multicalidad
+      - name: Subir sitio multicalidad + Fase 66D
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
           retention-days: 1
 
-      - name: Publicar Fase 65A
+      - name: Publicar Fase 65A + 66D
         id: deployment
         uses: actions/deploy-pages@v4
