@@ -7,10 +7,12 @@ from pathlib import Path
 
 import precip_type_intensity_phase30 as p30
 import gfs_precip_batch_phase57 as g57
+from map_visual_styles import PRECIP_RATE_THRESHOLDS
 
 ECMWF_STEPS = (3, 6, 9, 12, 18, 24, 36, 48, 60, 72, 96, 120, 144, 192, 240, 288, 336, 360)
 GFS_STEPS = ECMWF_STEPS + (384,)
 EXPECTED_BOUNDS = {"west": -25.125, "east": 45.125, "south": 19.875, "north": 72.125}
+EXPECTED_RATE_THRESHOLDS = (0.02, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0)
 
 
 def validate(model: str, steps: tuple[int, ...]) -> None:
@@ -18,6 +20,10 @@ def validate(model: str, steps: tuple[int, ...]) -> None:
     source_name = "manifest-phase30-ecmwf.json" if model == "ecmwf" else "manifest-phase30-gfs.json"
     path = base / source_name
     data = json.loads(path.read_text(encoding="utf-8"))
+
+    actual_thresholds = tuple(float(x) for x in PRECIP_RATE_THRESHOLDS.tolist())
+    if len(actual_thresholds) != len(EXPECTED_RATE_THRESHOLDS) or any(abs(a-b) > 1e-6 for a, b in zip(actual_thresholds, EXPECTED_RATE_THRESHOLDS)):
+        raise RuntimeError(f"Escala de intensidad inesperada: {actual_thresholds}")
 
     expected = len(steps) * 2
     summary = data.get("summary", {})
@@ -62,6 +68,10 @@ def validate(model: str, steps: tuple[int, ...]) -> None:
         "variables": {
             "precipitation_rate": "Intensidad instantánea en mm/h",
             "precipitation_type": "Tipo de precipitación categórico sin interpolación entre clases",
+        },
+        "visual_style": {
+            "precipitation_rate": "Fase 66A · intervalos explícitos; seco por debajo de 0.02 mm/h",
+            "thresholds_mm_h": list(EXPECTED_RATE_THRESHOLDS),
         },
         "status": "ok",
         "summary": {"successes": expected, "failures": 0, "expected": expected},
