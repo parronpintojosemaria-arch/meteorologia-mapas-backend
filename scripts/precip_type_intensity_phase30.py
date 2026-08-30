@@ -18,6 +18,7 @@ from rasterio.warp import Resampling, calculate_default_transform, reproject
 import ecmwf_surface_phase2 as es
 import gfs_temperature_phase20 as g20
 import gfs_surface_phase21 as g21
+from map_visual_styles import render_precip_rate
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public-phase30"
@@ -217,7 +218,7 @@ def ecmwf_main():
             check_bounds(b, f"ECMWF tprate {sk}")
             mmh = rate_to_mmh(vals, units)
             out = base / "precipitation_rate" / f"{sk}.webp"
-            es.save_rgba(mmh, b, out, matplotlib.colormaps.get_cmap("turbo"), 0, 30, alpha=220, zero_transparent=True)
+            render_precip_rate(mmh, b, out, es.project)
             manifest["steps"][sk]["precipitation_rate"] = {
                 "status": "ok", "image": rel(out), "bounds": b, "units": "mm/h",
                 "range": es.finite_range(mmh), "raw_units": units, "source_endpoint": src,
@@ -309,7 +310,7 @@ def gfs_main():
             check_bounds(b, f"GFS PRATE {sk}")
             mmh = rate_to_mmh(vals, units)
             out = base / "precipitation_rate" / f"{sk}.webp"
-            g21.render(mmh, b, out, "turbo", 0, 30)
+            render_precip_rate(mmh, b, out, g21.project)
             manifest["steps"][sk]["precipitation_rate"] = {
                 "status": "ok", "image": rel(out), "bounds": b, "units": "mm/h",
                 "range": g21.finite_range(mmh), "raw_units": units, "step_type": "instant",
