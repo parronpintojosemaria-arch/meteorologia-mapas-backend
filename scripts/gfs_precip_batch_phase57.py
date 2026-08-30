@@ -73,7 +73,6 @@ def _download(url: str, target: Path, label: str) -> None:
             last = exc
             if attempt == 5:
                 break
-            # NOMADS pide espaciar peticiones. También tratamos 404 transitorios del CGI.
             time.sleep(3 * attempt)
     raise RuntimeError(f"No se pudo descargar {label} tras 5 intentos: {last}")
 
@@ -145,8 +144,6 @@ def generate(steps: tuple[int, ...]) -> None:
     failures: list[str] = []
     prefetched: dict[int, dict] = {}
 
-    # Verificamos primero el final del horizonte. Si NOMADS todavía no lo tiene,
-    # no gastamos cientos de peticiones antes de descubrirlo.
     last_step = max(steps)
     try:
         prefetched[last_step] = _read_step(run_dt, last_step)
@@ -161,7 +158,7 @@ def generate(steps: tuple[int, ...]) -> None:
             rate = data["precipitation_rate"]
             mmh = p30.rate_to_mmh(rate["values"], rate["units"])
             rate_out = base / "precipitation_rate" / f"{sk}.webp"
-            g21.render(mmh, rate["bounds"], rate_out, "turbo", 0, 30)
+            p30.render_precip_rate(mmh, rate["bounds"], rate_out, g21.project)
             manifest["steps"][sk]["precipitation_rate"] = {
                 "status": "ok",
                 "image": p30.rel(rate_out),
@@ -200,7 +197,6 @@ def generate(steps: tuple[int, ...]) -> None:
         except Exception as exc:
             failures.append(f"GFS {sk}: {exc}")
 
-        # Pausa corta: el propio NOMADS pide espaciar solicitudes automatizadas.
         time.sleep(0.45)
 
     expected = len(steps) * 2
