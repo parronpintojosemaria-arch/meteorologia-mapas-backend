@@ -1,0 +1,164 @@
+name: Fase 66E · 500 hPa compuesto + isobaras + ICON-EU
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/synoptic_500_mslp_phase66e.py"
+      - "scripts/ecmwf_pressure_levels_phase4.py"
+      - "scripts/ecmwf_surface_phase2.py"
+      - "scripts/gfs_pressure_phase24.py"
+      - "scripts/gfs_surface_phase21.py"
+      - "scripts/icon_eu_surface_phase35.py"
+      - "scripts/icon_eu_pressure_jet_phase36.py"
+      - "scripts/map_branding.py"
+      - "requirements.txt"
+      - ".github/workflows/synoptic-500-mslp-phase66e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66E
+        run: python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+      - name: Generar ECMWF compuesto
+        run: python scripts/synoptic_500_mslp_phase66e.py ecmwf
+      - name: Validar ECMWF 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('experimental-phase66e/ecmwf/manifest-phase66e.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66E' and d['status']=='ok', d
+          assert d['level_hpa']==500 and d['steps']==[0,24,72], d
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}, d['requested_bounds']
+          assert d['summary']=={'successes':3,'failures':0,'expected':3}, d['summary']
+          assert d['style']['mean_sea_level_pressure_isobars_hpa']==4
+          for rec in d['maps'].values():
+              assert rec['status']=='ok', rec
+              p=rec['mean_sea_level_pressure_range_hpa']
+              assert 850 <= p['min'] <= 1100 and 850 <= p['max'] <= 1100, p
+              img=Path('experimental-phase66e')/rec['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+              assert rec['size']['width']>=600 and rec['size']['height']>=600, rec['size']
+          print('ECMWF 66E validada 3/3 · ciclo',d['run_utc'])
+          PY
+      - name: Subir ECMWF 66E
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66e-ecmwf-500-mslp
+          path: experimental-phase66e/ecmwf
+          retention-days: 7
+          if-no-files-found: error
+
+  gfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66E
+        run: python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+      - name: Generar GFS compuesto
+        run: python scripts/synoptic_500_mslp_phase66e.py gfs
+      - name: Validar GFS 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('experimental-phase66e/gfs/manifest-phase66e.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66E' and d['status']=='ok', d
+          assert d['level_hpa']==500 and d['steps']==[0,24,72], d
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}, d['requested_bounds']
+          assert d['summary']=={'successes':3,'failures':0,'expected':3}, d['summary']
+          assert d['style']['mean_sea_level_pressure_isobars_hpa']==4
+          for rec in d['maps'].values():
+              assert rec['status']=='ok', rec
+              p=rec['mean_sea_level_pressure_range_hpa']
+              assert 850 <= p['min'] <= 1100 and 850 <= p['max'] <= 1100, p
+              img=Path('experimental-phase66e')/rec['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+              assert rec['size']['width']>=600 and rec['size']['height']>=600, rec['size']
+          print('GFS 66E validada 3/3 · ciclo',d['run_utc'])
+          PY
+      - name: Subir GFS 66E
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66e-gfs-500-mslp
+          path: experimental-phase66e/gfs
+          retention-days: 7
+          if-no-files-found: error
+
+  icon-eu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66E
+        run: python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+      - name: Generar ICON-EU compuesto
+        run: python scripts/synoptic_500_mslp_phase66e.py icon
+      - name: Validar ICON-EU 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('experimental-phase66e/icon/manifest-phase66e.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66E' and d['status']=='ok', d
+          assert d['level_hpa']==500 and d['steps']==[0,24,72], d
+          assert d['requested_bounds']=={'west':-23.5,'east':45.0,'south':29.5,'north':70.5}, d['requested_bounds']
+          assert d['summary']=={'successes':3,'failures':0,'expected':3}, d['summary']
+          assert d['style']['mean_sea_level_pressure_isobars_hpa']==4
+          expected={'west':-23.53125,'east':45.03125,'south':29.46875,'north':70.53125}
+          for rec in d['maps'].values():
+              assert rec['status']=='ok', rec
+              assert rec['bounds']==expected, rec['bounds']
+              p=rec['mean_sea_level_pressure_range_hpa']
+              assert 850 <= p['min'] <= 1100 and 850 <= p['max'] <= 1100, p
+              img=Path('experimental-phase66e')/rec['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+              assert rec['size']['width']>=600 and rec['size']['height']>=500, rec['size']
+          print('ICON-EU 66E validada 3/3 · ciclo',d['run_utc'])
+          PY
+      - name: Subir ICON-EU 66E
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66e-icon-eu-500-mslp
+          path: experimental-phase66e/icon
+          retention-days: 7
+          if-no-files-found: error
