@@ -1,0 +1,127 @@
+name: Fase 66C · 500 hPa sinóptico horizonte completo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/synoptic_500_full_phase66c.py"
+      - "scripts/synoptic_500_phase66b.py"
+      - ".github/workflows/synoptic-500-full-phase66c.yml"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf-500-full:
+    name: ECMWF 500 hPa · +0 a +360 h
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis
+        run: |
+          python -m py_compile scripts/synoptic_500_phase66b.py scripts/synoptic_500_full_phase66c.py
+      - name: Generar ECMWF 500 hPa horizonte completo
+        run: python scripts/synoptic_500_full_phase66c.py ecmwf
+      - name: Validar ECMWF 13/13
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          expected=[0,12,24,48,72,96,120,144,192,240,288,336,360]
+          base=Path('experimental-phase66c/ecmwf')
+          p=base/'manifest-phase66c.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['phase']=='66C' and d['status']=='ok', d.get('status')
+          assert d['model']=='ECMWF IFS' and d['level_hpa']==500
+          assert d['steps']==expected and d['horizon_hours']==360
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}
+          assert d['summary']=={'successes':13,'failures':0,'expected':13}, d['summary']
+          for step in expected:
+              sk=f'f{step:03d}'
+              rec=d['maps'][sk]
+              assert rec['status']=='ok', (sk,rec)
+              b=rec['bounds']
+              target={'west':-60.125,'east':50.125,'south':19.875,'north':84.125}
+              for k,v in target.items():
+                  assert abs(float(b[k])-v)<1e-6, (sk,k,b[k],v)
+              img=base/f'500hpa_synoptic_{sk}.webp'
+              assert img.is_file() and img.stat().st_size>1000, img
+          assert len(list(base.glob('*.webp')))==13
+          print('ECMWF Fase 66C validada: 13/13 · +360 h')
+          PY
+      - name: Subir ECMWF 66C
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66c-ecmwf-500-synoptic-full
+          path: experimental-phase66c/ecmwf/
+          if-no-files-found: error
+          retention-days: 7
+
+  gfs-500-full:
+    name: GFS 500 hPa · +0 a +384 h
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis
+        run: |
+          python -m py_compile scripts/synoptic_500_phase66b.py scripts/synoptic_500_full_phase66c.py
+      - name: Generar GFS 500 hPa horizonte completo
+        run: python scripts/synoptic_500_full_phase66c.py gfs
+      - name: Validar GFS 14/14
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          expected=[0,12,24,48,72,96,120,144,192,240,288,336,360,384]
+          base=Path('experimental-phase66c/gfs')
+          p=base/'manifest-phase66c.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['phase']=='66C' and d['status']=='ok', d.get('status')
+          assert d['model']=='NOAA GFS' and d['level_hpa']==500
+          assert d['steps']==expected and d['horizon_hours']==384
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}
+          assert d['summary']=={'successes':14,'failures':0,'expected':14}, d['summary']
+          for step in expected:
+              sk=f'f{step:03d}'
+              rec=d['maps'][sk]
+              assert rec['status']=='ok', (sk,rec)
+              b=rec['bounds']
+              target={'west':-60.125,'east':50.125,'south':19.875,'north':84.125}
+              for k,v in target.items():
+                  assert abs(float(b[k])-v)<1e-6, (sk,k,b[k],v)
+              img=base/f'500hpa_synoptic_{sk}.webp'
+              assert img.is_file() and img.stat().st_size>1000, img
+          assert len(list(base.glob('*.webp')))==14
+          print('GFS Fase 66C validada: 14/14 · +384 h')
+          PY
+      - name: Subir GFS 66C
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66c-gfs-500-synoptic-full
+          path: experimental-phase66c/gfs/
+          if-no-files-found: error
+          retention-days: 7
