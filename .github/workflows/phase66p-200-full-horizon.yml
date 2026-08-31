@@ -1,0 +1,170 @@
+name: Fase 66P · 200 hPa horizonte completo premium
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66p-200-full-horizon]
+    paths:
+      - "scripts/synoptic_200_full_phase66p.py"
+      - "scripts/build_phase66p_maplibre_viewer.py"
+      - "scripts/smoke_phase66p_maplibre.py"
+      - "scripts/gfs_pressure_phase24.py"
+      - ".github/workflows/phase66p-200-full-horizon.yml"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  generate:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: ecmwf
+            label: ECMWF · 200 hPa · 85 mapas · +360 h
+            expected: 85
+            horizon: 360
+            artifact: fase66p-ecmwf-200-full
+          - model: gfs
+            label: GFS · 200 hPa · 129 mapas · +384 h
+            expected: 129
+            horizon: 384
+            artifact: fase66p-gfs-200-full
+          - model: icon
+            label: ICON-EU · 200 hPa · 93 mapas · +120 h
+            expected: 93
+            horizon: 120
+            artifact: fase66p-icon-eu-200-full
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66P y regresión GFS
+        run: |
+          python -m py_compile scripts/synoptic_200_full_phase66p.py
+          python - <<'PY'
+          import numpy as np
+          import sys
+          sys.path.insert(0, 'scripts')
+          import gfs_pressure_phase24 as g
+          a=g.to_height_m(np.array([[12000.]],dtype='float32'),'gpm')
+          assert abs(float(a[0,0])-12000.0) < 0.1, a
+          b=g.to_height_m(np.array([[120000.]],dtype='float32'),'m**2 s**-2')
+          assert 11000 < float(b[0,0]) < 13000, b
+          print('Conversión GFS HGT OK: metros respetados y geopotencial convertido')
+          PY
+      - name: Generar horizonte completo 200 hPa
+        run: python scripts/synoptic_200_full_phase66p.py "${{ matrix.model }}"
+      - name: Validar datos, cadencia y mapas 200 hPa
+        env:
+          MODEL: ${{ matrix.model }}
+          EXPECTED: ${{ matrix.expected }}
+          HORIZON: ${{ matrix.horizon }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          m=os.environ['MODEL']; expected=int(os.environ['EXPECTED']); horizon=int(os.environ['HORIZON'])
+          p=Path('experimental-phase66p')/m/'manifest-phase66p.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['phase']=='66P' and d['status']=='ok' and d['level_hpa']==200, d.get('failure_notes')
+          assert d['summary']=={'successes':expected,'failures':0,'expected':expected}, d['summary']
+          assert d['horizon_hours']==horizon and max(d['generated_steps'])==horizon
+          if m=='ecmwf': wanted=list(range(0,145,3))+list(range(150,361,6))
+          elif m=='gfs': wanted=list(range(0,385,3))
+          else: wanted=list(range(0,79))+list(range(81,121,3))
+          assert d['generated_steps']==wanted
+          assert len(list(p.parent.glob('*.webp')))==expected
+          for sk,r in d['maps'].items():
+              assert r['status']=='ok', (sk,r)
+              s=r['size']; assert s['width']>s['height'] and s['width']>=1000, (sk,s)
+              assert 9000 <= r['geopotential_height_mean_m'] <= 16500, (sk,r['geopotential_height_mean_m'])
+              pr=r['mean_sea_level_pressure_range_hpa']
+              assert 850<=pr['min']<=1100 and 850<=pr['max']<=1100, (sk,pr)
+              tr=r['temperature_range_c']
+              assert -120 <= tr['min'] <= 30 and -120 <= tr['max'] <= 30, (sk,tr)
+              assert (p.parent/r['image']).is_file(), r['image']
+          print(f"{m} 66P validado {expected}/{expected} · 200 hPa · horizonte +{horizon} h")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: experimental-phase66p/${{ matrix.model }}/
+          retention-days: 7
+          if-no-files-found: error
+
+  viewer:
+    name: MapLibre · 200 hPa · 307 mapas · navegador real
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66p-ecmwf-200-full
+          path: phase66p-input/ecmwf
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66p-gfs-200-full
+          path: phase66p-input/gfs
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66p-icon-eu-200-full
+          path: phase66p-input/icon
+      - name: Construir visor MapLibre 66P
+        run: |
+          python -m py_compile scripts/build_phase66p_maplibre_viewer.py
+          python scripts/build_phase66p_maplibre_viewer.py
+      - name: Validar paquete 200 hPa 307/307
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('experimental-phase66p')
+          d=json.loads((out/'report-phase66p.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66P' and d['status']=='ok' and d['level_hpa']==200
+          assert d['production_changed'] is False
+          assert d['total_maps']==307
+          assert {k:v['maps'] for k,v in d['models'].items()}=={'ecmwf':85,'gfs':129,'icon':93}
+          assert {k:v['horizon'] for k,v in d['models'].items()}=={'ecmwf':360,'gfs':384,'icon':120}
+          assert len(list(out.glob('*/*.webp')))==307
+          html=(out/'index.html').read_text(encoding='utf-8')
+          for token in ('maplibregl.Map','OpenFreeMap','aspect-ratio:16/9','window.__phase66pState','200 hPa','Dominio'):
+              assert token in html, token
+          assert 'leaflet' not in html.lower()
+          print('66P paquete estático OK · 200 hPa · 307/307 · MapLibre')
+          PY
+      - name: Instalar Chromium de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Probar horizontes finales e intervalos 200 hPa
+        run: |
+          python -m py_compile scripts/smoke_phase66p_maplibre.py
+          python -m http.server 8773 --directory experimental-phase66p >/tmp/phase66p-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66p_maplibre.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66p-maplibre-200-full-horizon
+          path: experimental-phase66p/
+          retention-days: 7
+          if-no-files-found: error
