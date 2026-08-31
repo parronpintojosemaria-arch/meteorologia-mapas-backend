@@ -162,10 +162,47 @@ def to_celsius(values, units):
 
 
 def to_height_m(values, units):
-    u = (units or "").lower()
-    if "m**2" in u or "m2" in u or "s**-2" in u or np.nanmean(values) > 10000:
-        return values / G0
-    return values
+    """Convierte HGT a metros respetando primero las unidades del GRIB.
+
+    GFS/NOMADS suele entregar HGT como altura geopotencial en gpm/metres.
+    En niveles altos (250/200 hPa) esos valores superan 10 000 m, por lo que
+    no se puede usar ese umbral para decidir si son geopotencial m²/s².
+    """
+    arr = np.asarray(values, dtype="float32")
+    u = (units or "").strip().lower().replace(" ", "")
+
+    # Geopotencial (m² s⁻²): convertir a altura geopotencial en metros.
+    if (
+        "m**2" in u
+        or "m^2" in u
+        or "m2" in u
+        or "s**-2" in u
+        or "s^-2" in u
+        or "jkg" in u
+    ):
+        return arr / G0
+
+    # Altura ya expresada en metros / geopotential metres: no convertir.
+    if (
+        u in {"m", "gpm", "meter", "meters", "metre", "metres"}
+        or "geopotentialmetre" in u
+        or "geopotentialmeter" in u
+    ):
+        return arr
+
+    finite = arr[np.isfinite(arr)]
+    if not finite.size:
+        raise RuntimeError("GFS HGT: sin valores finitos")
+    mean = float(np.mean(finite))
+
+    # Fallback solo para GRIB sin unidades útiles. Una altura de presión
+    # atmosférica razonable queda muy por debajo de 30 km; geopotencial en
+    # m²/s² queda típicamente muy por encima de este umbral.
+    if mean > 30000.0:
+        return arr / G0
+    if -1000.0 <= mean <= 30000.0:
+        return arr
+    raise RuntimeError(f"GFS HGT: unidades/escala inesperadas {units!r}, media={mean:.1f}")
 
 
 def finite_range(values):
