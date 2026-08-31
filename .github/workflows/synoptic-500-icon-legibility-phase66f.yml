@@ -1,0 +1,81 @@
+name: Fase 66F · ICON-EU legibilidad sinóptica
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/synoptic_500_mslp_icon_legibility_phase66f.py"
+      - "scripts/synoptic_500_mslp_phase66e.py"
+      - "scripts/icon_eu_surface_phase35.py"
+      - "scripts/icon_eu_pressure_jet_phase36.py"
+      - "scripts/map_branding.py"
+      - "requirements.txt"
+      - ".github/workflows/synoptic-500-icon-legibility-phase66f.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  icon-eu-legibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validar sintaxis 66F
+        run: |
+          python -m py_compile scripts/synoptic_500_mslp_icon_legibility_phase66f.py
+          python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+
+      - name: Generar ICON-EU con legibilidad corregida
+        run: python scripts/synoptic_500_mslp_icon_legibility_phase66f.py
+
+      - name: Validar ICON-EU 66F 3/3
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path('experimental-phase66e/icon/manifest-phase66f.json')
+          d = json.loads(p.read_text(encoding='utf-8'))
+          assert d['status'] == 'ok', d
+          assert d['phase'] == '66F', d.get('phase')
+          assert d['model'] == 'DWD ICON-EU', d.get('model')
+          assert d['steps'] == [0, 24, 72], d.get('steps')
+          assert d['summary'] == {'successes': 3, 'failures': 0, 'expected': 3}, d['summary']
+          vf = d['visual_fix']
+          assert vf['meteorological_data_changed'] is False, vf
+          assert 2.4 <= float(vf['visual_scale_factor']) <= 3.0, vf
+
+          for key, rec in d['maps'].items():
+              assert rec['status'] == 'ok', (key, rec)
+              size = rec['size']
+              assert size['width'] >= 1800 and size['height'] >= 1800, size
+              pr = rec['mean_sea_level_pressure_range_hpa']
+              assert 850 <= pr['min'] <= 1100 and 850 <= pr['max'] <= 1100, pr
+              img = Path('experimental-phase66e') / rec['image']
+              assert img.is_file() and img.stat().st_size > 1000, img
+
+          print('ICON-EU Fase 66F validada 3/3 · ciclo', d['run_utc'])
+          PY
+
+      - name: Subir ICON-EU 66F
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66f-icon-eu-500-mslp-legible
+          path: experimental-phase66e/icon
+          retention-days: 7
+          if-no-files-found: error
