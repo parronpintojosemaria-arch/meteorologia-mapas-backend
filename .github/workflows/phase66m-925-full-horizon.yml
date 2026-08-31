@@ -1,0 +1,157 @@
+name: Fase 66M · 925 hPa horizonte completo premium
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66m-925-full-horizon]
+    paths:
+      - "scripts/synoptic_925_full_phase66m.py"
+      - "scripts/build_phase66m_maplibre_viewer.py"
+      - "scripts/smoke_phase66m_maplibre.py"
+      - ".github/workflows/phase66m-925-full-horizon.yml"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  generate:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: ecmwf
+            label: ECMWF · 925 hPa · 85 mapas · +360 h
+            expected: 85
+            horizon: 360
+            artifact: fase66m-ecmwf-925-full
+          - model: gfs
+            label: GFS · 925 hPa · 129 mapas · +384 h
+            expected: 129
+            horizon: 384
+            artifact: fase66m-gfs-925-full
+          - model: icon
+            label: ICON-EU · 925 hPa · 93 mapas · +120 h
+            expected: 93
+            horizon: 120
+            artifact: fase66m-icon-eu-925-full
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66M
+        run: python -m py_compile scripts/synoptic_925_full_phase66m.py
+      - name: Generar horizonte completo 925 hPa
+        run: python scripts/synoptic_925_full_phase66m.py "${{ matrix.model }}"
+      - name: Validar datos, cadencia y mapas 925 hPa
+        env:
+          MODEL: ${{ matrix.model }}
+          EXPECTED: ${{ matrix.expected }}
+          HORIZON: ${{ matrix.horizon }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          m=os.environ['MODEL']; expected=int(os.environ['EXPECTED']); horizon=int(os.environ['HORIZON'])
+          p=Path('experimental-phase66m')/m/'manifest-phase66m.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['phase']=='66M' and d['status']=='ok' and d['level_hpa']==925, d.get('failure_notes')
+          assert d['summary']=={'successes':expected,'failures':0,'expected':expected}, d['summary']
+          assert d['horizon_hours']==horizon and max(d['generated_steps'])==horizon
+          if m=='ecmwf': wanted=list(range(0,145,3))+list(range(150,361,6))
+          elif m=='gfs': wanted=list(range(0,385,3))
+          else: wanted=list(range(0,79))+list(range(81,121,3))
+          assert d['generated_steps']==wanted
+          assert len(list(p.parent.glob('*.webp')))==expected
+          for sk,r in d['maps'].items():
+              assert r['status']=='ok', (sk,r)
+              s=r['size']; assert s['width']>s['height'] and s['width']>=1000, (sk,s)
+              assert 200 <= r['geopotential_height_mean_m'] <= 1800, (sk,r['geopotential_height_mean_m'])
+              pr=r['mean_sea_level_pressure_range_hpa']
+              assert 850<=pr['min']<=1100 and 850<=pr['max']<=1100, (sk,pr)
+              tr=r['temperature_range_c']
+              assert -100 <= tr['min'] <= 70 and -100 <= tr['max'] <= 70, (sk,tr)
+              assert (p.parent/r['image']).is_file(), r['image']
+          print(f"{m} 66M validado {expected}/{expected} · 925 hPa · horizonte +{horizon} h")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: experimental-phase66m/${{ matrix.model }}/
+          retention-days: 7
+          if-no-files-found: error
+
+  viewer:
+    name: MapLibre · 925 hPa · 307 mapas · navegador real
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66m-ecmwf-925-full
+          path: phase66m-input/ecmwf
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66m-gfs-925-full
+          path: phase66m-input/gfs
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66m-icon-eu-925-full
+          path: phase66m-input/icon
+      - name: Construir visor MapLibre 66M
+        run: |
+          python -m py_compile scripts/build_phase66m_maplibre_viewer.py
+          python scripts/build_phase66m_maplibre_viewer.py
+      - name: Validar paquete 925 hPa 307/307
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('experimental-phase66m')
+          d=json.loads((out/'report-phase66m.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66M' and d['status']=='ok' and d['level_hpa']==925
+          assert d['production_changed'] is False
+          assert d['total_maps']==307
+          assert {k:v['maps'] for k,v in d['models'].items()}=={'ecmwf':85,'gfs':129,'icon':93}
+          assert {k:v['horizon'] for k,v in d['models'].items()}=={'ecmwf':360,'gfs':384,'icon':120}
+          assert len(list(out.glob('*/*.webp')))==307
+          html=(out/'index.html').read_text(encoding='utf-8')
+          for token in ('maplibregl.Map','OpenFreeMap','aspect-ratio:16/9','window.__phase66mState','925 hPa','Dominio'):
+              assert token in html, token
+          assert 'leaflet' not in html.lower()
+          print('66M paquete estático OK · 925 hPa · 307/307 · MapLibre')
+          PY
+      - name: Instalar Chromium de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Probar horizontes finales e intervalos 925 hPa
+        run: |
+          python -m py_compile scripts/smoke_phase66m_maplibre.py
+          python -m http.server 8770 --directory experimental-phase66m >/tmp/phase66m-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66m_maplibre.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66m-maplibre-925-full-horizon
+          path: experimental-phase66m/
+          retention-days: 7
+          if-no-files-found: error
