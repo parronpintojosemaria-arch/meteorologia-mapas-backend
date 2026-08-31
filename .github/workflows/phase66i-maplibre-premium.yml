@@ -1,0 +1,115 @@
+name: Fase 66I · MapLibre premium sin producción
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66i-maplibre-test]
+    paths:
+      - "scripts/build_phase66i_maplibre_viewer.py"
+      - "scripts/smoke_phase66i_maplibre.py"
+      - ".github/workflows/phase66i-maplibre-premium.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  maplibre-premium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Recuperar última Fase 66H verde
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/phase66h-500hpa-premium-cadence.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          test -n "$RUN_ID"
+          echo "66H_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          mkdir -p phase66i-input
+          for spec in "fase66h-ecmwf-500-premium:ecmwf" "fase66h-gfs-500-premium:gfs" "fase66h-icon-eu-500-premium:icon"; do
+            NAME="${spec%%:*}"
+            DIR="${spec##*:}"
+            AID="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100" --jq ".artifacts[] | select(.name==\"${NAME}\") | .id" | head -n1)"
+            test -n "$AID"
+            mkdir -p "phase66i-input/$DIR"
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${AID}/zip" > "/tmp/${DIR}.zip"
+            unzip -q "/tmp/${DIR}.zip" -d "phase66i-input/$DIR"
+          done
+
+      - name: Validar entrada 66H 43/43
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          expected={"ecmwf":9,"gfs":9,"icon":25}
+          for m,n in expected.items():
+              p=Path("phase66i-input")/m/"manifest-phase66h.json"
+              d=json.loads(p.read_text(encoding="utf-8"))
+              assert d["phase"]=="66H" and d["status"]=="ok", (m,d.get("status"))
+              assert d["summary"]["successes"]==n and d["summary"]["failures"]==0, (m,d["summary"])
+              assert len(list((p.parent).glob("*.webp")))==n, m
+          print("Entrada 66H confirmada: 43/43")
+          PY
+
+      - name: Construir visor MapLibre 66I
+        run: |
+          python -m py_compile scripts/build_phase66i_maplibre_viewer.py
+          python scripts/build_phase66i_maplibre_viewer.py
+
+      - name: Validación estática 66I
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path("experimental-phase66i")
+          d=json.loads((out/"report-phase66i.json").read_text(encoding="utf-8"))
+          assert d["phase"]=="66I" and d["status"]=="ok"
+          assert d["production_changed"] is False
+          assert {m:v["maps"] for m,v in d["models"].items()}=={"ecmwf":9,"gfs":9,"icon":25}
+          assert len(list(out.glob("*/*.webp")))==43
+          html=(out/"index.html").read_text(encoding="utf-8")
+          required=[
+              "maplibregl.Map",
+              "https://tiles.openfreemap.org/styles/liberty",
+              "map.scrollZoom.disable()",
+              "type:'image'",
+              "updateImage",
+              "raster-opacity",
+              "Etiquetas ✓",
+              "OpenFreeMap © OpenMapTiles",
+          ]
+          for token in required:
+              assert token in html, token
+          assert "leaflet" not in html.lower()
+          print("66I estática OK · MapLibre/OpenFreeMap · 43 mapas")
+          PY
+
+      - name: Instalar navegador de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+
+      - name: Prueba Chromium + captura real
+        run: |
+          python -m py_compile scripts/smoke_phase66i_maplibre.py
+          python -m http.server 8765 --directory experimental-phase66i >/tmp/phase66i-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66i_maplibre.py
+
+      - name: Guardar Fase 66I
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66i-maplibre-premium
+          path: experimental-phase66i/
+          retention-days: 7
+          if-no-files-found: error
