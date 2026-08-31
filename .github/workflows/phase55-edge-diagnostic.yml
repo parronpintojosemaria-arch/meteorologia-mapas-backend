@@ -1,0 +1,42 @@
+name: Diagnóstico Fase 55 · precipitación borde s4
+
+on:
+  push:
+    branches:
+      - phase55-fix-precip-edge-guard
+    paths:
+      - 'scripts/diagnose_phase55_precip_edge.py'
+      - '.github/workflows/phase55-edge-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-s4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ICON_EU_RUN_UTC: '2026-08-31T12:00:00+00:00'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Diagnosticar +81..+120 h
+        run: python scripts/diagnose_phase55_precip_edge.py
+
+      - name: Subir informe
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase55-edge-diagnostic
+          path: phase55-edge-diagnostic/
+          if-no-files-found: error
+          retention-days: 7
