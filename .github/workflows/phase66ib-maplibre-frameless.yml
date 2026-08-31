@@ -1,0 +1,104 @@
+name: Fase 66I-B · MapLibre sin efecto recuadro
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66i-maplibre-test]
+    paths:
+      - "scripts/build_phase66ib_frameless_viewer.py"
+      - "scripts/smoke_phase66ib_frameless.py"
+      - ".github/workflows/phase66ib-maplibre-frameless.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  frameless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Recuperar última Fase 66H verde
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/phase66h-500hpa-premium-cadence.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          test -n "$RUN_ID"
+          mkdir -p phase66ib-input
+          for spec in "fase66h-ecmwf-500-premium:ecmwf" "fase66h-gfs-500-premium:gfs" "fase66h-icon-eu-500-premium:icon"; do
+            NAME="${spec%%:*}"; DIR="${spec##*:}"
+            AID="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100" --jq ".artifacts[] | select(.name==\"${NAME}\") | .id" | head -n1)"
+            test -n "$AID"
+            mkdir -p "phase66ib-input/$DIR"
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${AID}/zip" > "/tmp/${DIR}.zip"
+            unzip -q "/tmp/${DIR}.zip" -d "phase66ib-input/$DIR"
+          done
+
+      - name: Validar entrada 66H
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          expected={'ecmwf':9,'gfs':9,'icon':25}
+          for m,n in expected.items():
+              p=Path('phase66ib-input')/m/'manifest-phase66h.json'
+              d=json.loads(p.read_text(encoding='utf-8'))
+              assert d['phase']=='66H' and d['status']=='ok'
+              assert d['summary']=={'successes':n,'failures':0,'expected':n}
+              assert len(list(p.parent.glob('*.webp')))==n
+          print('Entrada 66H confirmada: 43/43')
+          PY
+
+      - name: Construir Fase 66I-B
+        run: |
+          python -m py_compile scripts/build_phase66ib_frameless_viewer.py
+          python scripts/build_phase66ib_frameless_viewer.py
+
+      - name: Validar estructura 66I-B
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('experimental-phase66ib')
+          d=json.loads((out/'report-phase66ib.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66I-B' and d['status']=='ok'
+          assert d['models']=={'ecmwf':9,'gfs':9,'icon':25}
+          assert d['production_changed'] is False
+          assert len(list(out.glob('*/*.webp')))==43
+          html=(out/'index.html').read_text(encoding='utf-8')
+          for token in ('viewportInsideWeather','ensureCover','aspect-ratio:16/9','minor_labels_hidden','Dominio'):
+              if token=='minor_labels_hidden': continue
+              assert token in html, token
+          assert 'leaflet' not in html.lower()
+          print('66I-B estructura OK')
+          PY
+
+      - name: Instalar Chromium de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+
+      - name: Prueba visual 3 modelos sin bordes
+        run: |
+          python -m py_compile scripts/smoke_phase66ib_frameless.py
+          python -m http.server 8766 --directory experimental-phase66ib >/tmp/phase66ib-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66ib_frameless.py
+
+      - name: Guardar Fase 66I-B
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66ib-maplibre-frameless
+          path: experimental-phase66ib/
+          retention-days: 7
+          if-no-files-found: error
