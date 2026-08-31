@@ -1,0 +1,165 @@
+name: Fase 66G · 500 hPa compuesto horizonte completo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/synoptic_500_mslp_full_phase66g.py"
+      - "scripts/synoptic_500_mslp_phase66e.py"
+      - "scripts/synoptic_500_mslp_icon_legibility_phase66f.py"
+      - "scripts/ecmwf_pressure_levels_phase4.py"
+      - "scripts/ecmwf_surface_phase2.py"
+      - "scripts/gfs_pressure_phase24.py"
+      - "scripts/gfs_surface_phase21.py"
+      - "scripts/icon_eu_surface_phase35.py"
+      - "scripts/icon_eu_pressure_jet_phase36.py"
+      - "scripts/map_branding.py"
+      - "requirements.txt"
+      - ".github/workflows/synoptic-500-mslp-full-phase66g.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ecmwf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66G
+        run: |
+          python -m py_compile scripts/synoptic_500_mslp_full_phase66g.py
+          python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+      - name: Generar ECMWF horizonte completo
+        run: python scripts/synoptic_500_mslp_full_phase66g.py ecmwf
+      - name: Validar ECMWF 13/13
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('experimental-phase66g/ecmwf/manifest-phase66g.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          expected=[0,12,24,48,72,96,120,144,192,240,288,336,360]
+          assert d['status']=='ok', d
+          assert d['steps']==expected, d['steps']
+          assert d['summary']=={'successes':13,'failures':0,'expected':13}, d['summary']
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}, d['requested_bounds']
+          for k,r in d['maps'].items():
+              assert r['status']=='ok', (k,r)
+              pr=r['mean_sea_level_pressure_range_hpa']
+              assert 850 <= pr['min'] <= 1100 and 850 <= pr['max'] <= 1100, pr
+              img=Path('experimental-phase66g')/r['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+          print('ECMWF Fase 66G validada 13/13 ·', d['run_utc'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66g-ecmwf-500-mslp-full
+          path: experimental-phase66g/ecmwf
+          retention-days: 7
+          if-no-files-found: error
+
+  gfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66G
+        run: |
+          python -m py_compile scripts/synoptic_500_mslp_full_phase66g.py
+          python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+      - name: Generar GFS horizonte completo
+        run: python scripts/synoptic_500_mslp_full_phase66g.py gfs
+      - name: Validar GFS 14/14
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('experimental-phase66g/gfs/manifest-phase66g.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          expected=[0,12,24,48,72,96,120,144,192,240,288,336,360,384]
+          assert d['status']=='ok', d
+          assert d['steps']==expected, d['steps']
+          assert d['summary']=={'successes':14,'failures':0,'expected':14}, d['summary']
+          assert d['requested_bounds']=={'west':-60.0,'east':50.0,'south':20.0,'north':84.0}, d['requested_bounds']
+          for k,r in d['maps'].items():
+              assert r['status']=='ok', (k,r)
+              pr=r['mean_sea_level_pressure_range_hpa']
+              assert 850 <= pr['min'] <= 1100 and 850 <= pr['max'] <= 1100, pr
+              img=Path('experimental-phase66g')/r['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+          print('GFS Fase 66G validada 14/14 ·', d['run_utc'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66g-gfs-500-mslp-full
+          path: experimental-phase66g/gfs
+          retention-days: 7
+          if-no-files-found: error
+
+  icon-eu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66G
+        run: |
+          python -m py_compile scripts/synoptic_500_mslp_full_phase66g.py
+          python -m py_compile scripts/synoptic_500_mslp_phase66e.py
+      - name: Generar ICON-EU horizonte completo
+        run: python scripts/synoptic_500_mslp_full_phase66g.py icon
+      - name: Validar ICON-EU 93/93
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('experimental-phase66g/icon/manifest-phase66g.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          expected=list(range(0,79))+list(range(81,121,3))
+          assert len(expected)==93
+          assert d['status']=='ok', d
+          assert d['steps']==expected, (len(d['steps']), d['steps'][:5], d['steps'][-5:])
+          assert d['summary']=={'successes':93,'failures':0,'expected':93}, d['summary']
+          assert d['requested_bounds']=={'west':-23.5,'east':45.0,'south':29.5,'north':70.5}, d['requested_bounds']
+          vf=d['visual_fix']
+          assert vf['meteorological_data_changed'] is False, vf
+          assert abs(float(vf['visual_scale_factor'])-2.65)<1e-9, vf
+          for k,r in d['maps'].items():
+              assert r['status']=='ok', (k,r)
+              pr=r['mean_sea_level_pressure_range_hpa']
+              assert 850 <= pr['min'] <= 1100 and 850 <= pr['max'] <= 1100, pr
+              img=Path('experimental-phase66g')/r['image']
+              assert img.is_file() and img.stat().st_size>1000, img
+          print('ICON-EU Fase 66G validada 93/93 ·', d['run_utc'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66g-icon-eu-500-mslp-full
+          path: experimental-phase66g/icon
+          retention-days: 7
+          if-no-files-found: error
