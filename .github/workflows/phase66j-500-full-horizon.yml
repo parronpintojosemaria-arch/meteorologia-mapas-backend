@@ -1,0 +1,157 @@
+name: Fase 66J · 500 hPa horizonte completo premium
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66j-500-full-horizon]
+    paths:
+      - "scripts/synoptic_500_full_phase66j.py"
+      - "scripts/build_phase66j_maplibre_viewer.py"
+      - "scripts/smoke_phase66j_maplibre.py"
+      - ".github/workflows/phase66j-500-full-horizon.yml"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  generate:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: ecmwf
+            label: ECMWF · 85 mapas · +360 h
+            expected: 85
+            horizon: 360
+            artifact: fase66j-ecmwf-500-full
+          - model: gfs
+            label: GFS · 129 mapas · +384 h
+            expected: 129
+            horizon: 384
+            artifact: fase66j-gfs-500-full
+          - model: icon
+            label: ICON-EU · 93 mapas · +120 h
+            expected: 93
+            horizon: 120
+            artifact: fase66j-icon-eu-500-full
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66J
+        run: python -m py_compile scripts/synoptic_500_full_phase66j.py
+      - name: Generar horizonte completo
+        run: python scripts/synoptic_500_full_phase66j.py "${{ matrix.model }}"
+      - name: Validar datos, cadencia y mapas
+        env:
+          MODEL: ${{ matrix.model }}
+          EXPECTED: ${{ matrix.expected }}
+          HORIZON: ${{ matrix.horizon }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          m=os.environ['MODEL']; expected=int(os.environ['EXPECTED']); horizon=int(os.environ['HORIZON'])
+          p=Path('experimental-phase66j')/m/'manifest-phase66j.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['phase']=='66J' and d['status']=='ok', d.get('failure_notes')
+          assert d['summary']=={'successes':expected,'failures':0,'expected':expected}, d['summary']
+          assert d['horizon_hours']==horizon and max(d['generated_steps'])==horizon
+          if m=='ecmwf':
+              wanted=list(range(0,145,3))+list(range(150,361,6))
+          elif m=='gfs':
+              wanted=list(range(0,385,3))
+          else:
+              wanted=list(range(0,79))+list(range(81,121,3))
+          assert d['generated_steps']==wanted, (m,len(d['generated_steps']),len(wanted))
+          assert len(list(p.parent.glob('*.webp')))==expected
+          for sk,r in d['maps'].items():
+              assert r['status']=='ok', (sk,r)
+              s=r['size']; assert s['width']>s['height'] and s['width']>=1000, (sk,s)
+              pr=r['mean_sea_level_pressure_range_hpa']
+              assert 850<=pr['min']<=1100 and 850<=pr['max']<=1100, (sk,pr)
+              assert (p.parent/r['image']).is_file(), r['image']
+          print(f"{m} 66J validado {expected}/{expected} · horizonte +{horizon} h")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: experimental-phase66j/${{ matrix.model }}/
+          retention-days: 7
+          if-no-files-found: error
+
+  viewer:
+    name: MapLibre · 307 mapas · navegador real
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66j-ecmwf-500-full
+          path: phase66j-input/ecmwf
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66j-gfs-500-full
+          path: phase66j-input/gfs
+      - uses: actions/download-artifact@v4
+        with:
+          name: fase66j-icon-eu-500-full
+          path: phase66j-input/icon
+      - name: Construir visor MapLibre 66J
+        run: |
+          python -m py_compile scripts/build_phase66j_maplibre_viewer.py
+          python scripts/build_phase66j_maplibre_viewer.py
+      - name: Validar paquete 307/307
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('experimental-phase66j')
+          d=json.loads((out/'report-phase66j.json').read_text(encoding='utf-8'))
+          assert d['phase']=='66J' and d['status']=='ok'
+          assert d['production_changed'] is False
+          assert d['total_maps']==307, d
+          assert {k:v['maps'] for k,v in d['models'].items()}=={'ecmwf':85,'gfs':129,'icon':93}
+          assert {k:v['horizon'] for k,v in d['models'].items()}=={'ecmwf':360,'gfs':384,'icon':120}
+          assert len(list(out.glob('*/*.webp')))==307
+          html=(out/'index.html').read_text(encoding='utf-8')
+          for token in ('maplibregl.Map','OpenFreeMap','aspect-ratio:16/9','window.__phase66jState','Dominio'):
+              assert token in html, token
+          assert 'leaflet' not in html.lower()
+          print('66J paquete estático OK · 307/307 · MapLibre')
+          PY
+      - name: Instalar Chromium de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Probar horizontes finales e intervalos
+        run: |
+          python -m py_compile scripts/smoke_phase66j_maplibre.py
+          python -m http.server 8767 --directory experimental-phase66j >/tmp/phase66j-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66j_maplibre.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66j-maplibre-full-horizon
+          path: experimental-phase66j/
+          retention-days: 7
+          if-no-files-found: error
