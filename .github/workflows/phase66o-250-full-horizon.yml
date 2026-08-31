@@ -8,6 +8,7 @@ on:
       - "scripts/synoptic_250_full_phase66o.py"
       - "scripts/build_phase66o_maplibre_viewer.py"
       - "scripts/smoke_phase66o_maplibre.py"
+      - "scripts/gfs_pressure_phase24.py"
       - ".github/workflows/phase66o-250-full-horizon.yml"
       - "requirements.txt"
 
@@ -49,8 +50,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Validar sintaxis 66O
-        run: python -m py_compile scripts/synoptic_250_full_phase66o.py
+      - name: Validar sintaxis 66O y conversión GFS
+        run: |
+          python -m py_compile scripts/synoptic_250_full_phase66o.py
+          python -m py_compile scripts/gfs_pressure_phase24.py
       - name: Generar horizonte completo 250 hPa
         run: python scripts/synoptic_250_full_phase66o.py "${{ matrix.model }}"
       - name: Validar datos, cadencia y mapas 250 hPa
