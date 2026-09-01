@@ -8,14 +8,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Rutas explícitas hacia el selector y la configuración de cada motor validado.
+# Así 66U solo fija el run_utc y el staging, sin alterar getters, fórmulas,
+# validaciones meteorológicas ni renderizadores de las fases 66J..66S.
 TARGETS = {
-    "500hpa": {"module": "synoptic_500_full_phase66j", "phase": "66J", "input": "phase66j-input", "selector": "h"},
-    "850hpa": {"module": "synoptic_850_full_phase66k", "phase": "66K", "input": "phase66k-input", "selector": "h"},
-    "700hpa": {"module": "synoptic_700_full_phase66l", "phase": "66L", "input": "phase66l-input", "selector": "h"},
-    "925hpa": {"module": "synoptic_925_full_phase66m", "phase": "66M", "input": "phase66m-input", "selector": "l.h"},
-    "300hpa": {"module": "synoptic_300_full_phase66n", "phase": "66N", "input": "phase66n-input", "selector": "h"},
-    "250hpa": {"module": "synoptic_250_full_phase66o", "phase": "66O", "input": "phase66o-input", "selector": "n.h"},
-    "200hpa": {"module": "synoptic_200_full_phase66p", "phase": "66P", "input": "phase66p-input", "selector": "o.n.h"},
+    "500hpa": {"module": "synoptic_500_full_phase66j", "phase": "66J", "input": "phase66j-input", "selector": "h", "config": "config"},
+    "850hpa": {"module": "synoptic_850_full_phase66k", "phase": "66K", "input": "phase66k-input", "selector": "h", "config": "config"},
+    "700hpa": {"module": "synoptic_700_full_phase66l", "phase": "66L", "input": "phase66l-input", "selector": "h", "config": "config"},
+    "925hpa": {"module": "synoptic_925_full_phase66m", "phase": "66M", "input": "phase66m-input", "selector": "l.h", "config": "l.config"},
+    "300hpa": {"module": "synoptic_300_full_phase66n", "phase": "66N", "input": "phase66n-input", "selector": "h", "config": "config"},
+    "250hpa": {"module": "synoptic_250_full_phase66o", "phase": "66O", "input": "phase66o-input", "selector": "n.h", "config": "n.config"},
+    "200hpa": {"module": "synoptic_200_full_phase66p", "phase": "66P", "input": "phase66p-input", "selector": "o.n.h", "config": "o.n.config"},
     "jet300": {"module": "jet_300_full_phase66q", "phase": "66Q", "input": "phase66q-input", "selector": "self"},
     "jet250": {"module": "jet_250_full_phase66r", "phase": "66R", "input": "phase66r-input", "selector": "self"},
     "jet200": {"module": "jet_200_full_phase66s", "phase": "66S", "input": "phase66s-input", "selector": "self"},
@@ -71,17 +74,10 @@ def main():
         mod._select_run = selected
     else:
         holder = resolve_attr(mod, target["selector"])
+        config_fn = resolve_attr(mod, target["config"])
 
         def selected(steps):
-            cfg = mod.config() if hasattr(mod, "config") else None
-            # 66O/66P reutilizan config de módulos inferiores.
-            if cfg is None:
-                if hasattr(mod, "n") and hasattr(mod.n, "config"):
-                    cfg = mod.n.config()
-                elif hasattr(mod, "o") and hasattr(mod.o, "n"):
-                    cfg = mod.o.n.config()
-                else:
-                    raise RuntimeError(f"{slug}: no se pudo resolver config")
+            cfg = config_fn()
             cfg["getter"](run_dt, max(steps))
             return run_dt
 
