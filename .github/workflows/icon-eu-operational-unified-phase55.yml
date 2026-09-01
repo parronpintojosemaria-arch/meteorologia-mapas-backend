@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/icon_eu_operational_selector_phase55.py'
       - 'scripts/icon_eu_surface_operational_block.py'
+      - 'scripts/icon_eu_precip_consistency_operational.py'
       - 'scripts/icon_eu_aloft_operational_block.py'
       - 'scripts/icon_eu_operational_merge.py'
       - '.github/workflows/icon-eu-operational-unified-phase55.yml'
