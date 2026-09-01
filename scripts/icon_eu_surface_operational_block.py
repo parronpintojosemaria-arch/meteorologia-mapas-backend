@@ -35,8 +35,9 @@ def main():
     run_dt = parse_run()
     public = ROOT / f"public-operational-{block}" / "icon-eu"
 
-    # Fase 55: el producto regular DWD puede presentar discrepancias aisladas
+    # Fase 55 v2: el producto regular DWD puede presentar discrepancias aisladas
     # en el halo exterior. El guard duro se aplica al interior sin modificar datos.
+    # El wrapper conserva una referencia a la función original para evitar recursión.
     p42.s38.precip_consistency = precip_guard.precip_consistency
     p42.PUBLIC = public
     p42.STEPS = steps
