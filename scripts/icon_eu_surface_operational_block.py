@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import icon_eu_precip_consistency_operational as precip_guard
 import icon_eu_surface_production_phase42 as p42
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,9 @@ def main():
     run_dt = parse_run()
     public = ROOT / f"public-operational-{block}" / "icon-eu"
 
+    # Fase 55: el producto regular DWD puede presentar discrepancias aisladas
+    # en el halo exterior. El guard duro se aplica al interior sin modificar datos.
+    p42.s38.precip_consistency = precip_guard.precip_consistency
     p42.PUBLIC = public
     p42.STEPS = steps
     p42.h37.choose_run = lambda: run_dt
