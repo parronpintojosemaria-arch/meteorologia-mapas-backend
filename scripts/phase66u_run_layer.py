@@ -12,7 +12,7 @@ TARGETS = {
     "500hpa": {"module": "synoptic_500_full_phase66j", "phase": "66J", "input": "phase66j-input", "selector": "h"},
     "850hpa": {"module": "synoptic_850_full_phase66k", "phase": "66K", "input": "phase66k-input", "selector": "h"},
     "700hpa": {"module": "synoptic_700_full_phase66l", "phase": "66L", "input": "phase66l-input", "selector": "h"},
-    "925hpa": {"module": "synoptic_925_full_phase66m", "phase": "66M", "input": "phase66m-input", "selector": "h"},
+    "925hpa": {"module": "synoptic_925_full_phase66m", "phase": "66M", "input": "phase66m-input", "selector": "l.h"},
     "300hpa": {"module": "synoptic_300_full_phase66n", "phase": "66N", "input": "phase66n-input", "selector": "h"},
     "250hpa": {"module": "synoptic_250_full_phase66o", "phase": "66O", "input": "phase66o-input", "selector": "n.h"},
     "200hpa": {"module": "synoptic_200_full_phase66p", "phase": "66P", "input": "phase66p-input", "selector": "o.n.h"},
@@ -53,12 +53,19 @@ def main():
     mod.OUT = ROOT / target["input"]
 
     if target["selector"] == "self":
-        original_getter = mod._getter
-        original_validate = mod._validate
+        # 66Q/66R exponen su getter directamente. 66S reutiliza el getter de
+        # 66R mediante mod.r, pero mantiene su propia validación física de 200 hPa.
+        if hasattr(mod, "_getter"):
+            getter = mod._getter()
+        elif hasattr(mod, "r") and hasattr(mod.r, "_getter"):
+            getter = mod.r._getter()
+        else:
+            raise RuntimeError(f"{slug}: no se pudo resolver getter Jet")
+        validate = mod._validate
 
         def selected(max_step):
-            speed, gh, _bounds, _sources = original_getter()(run_dt, max_step)
-            original_validate(speed, gh)
+            speed, gh, _bounds, _sources = getter(run_dt, max_step)
+            validate(speed, gh)
             return run_dt
 
         mod._select_run = selected
