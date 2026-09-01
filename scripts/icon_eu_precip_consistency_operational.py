@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import icon_eu_long_range_phase38 as s38
 
+# Guardamos la implementación original ANTES de que el bloque operativo
+# sustituya s38.precip_consistency. Así el wrapper nunca se llama a sí mismo.
+_ORIGINAL_PRECIP_CONSISTENCY = s38.precip_consistency
+
 
 def precip_consistency(total, rain, snow):
     """Valida TOT_PREC frente a lluvia+nieve sin falsear el borde de la malla.
@@ -13,7 +17,7 @@ def precip_consistency(total, rain, snow):
     Los controles de media, p99.9, fracción de outliers y confinamiento al borde
     siguen siendo obligatorios.
     """
-    pc = s38.precip_consistency(total, rain, snow)
+    pc = _ORIGINAL_PRECIP_CONSISTENCY(total, rain, snow)
     limits = pc.get("limits", {})
 
     mean_limit = float(limits.get("mean_abs_max_mm", s38.PRECIP_MEAN_ABS_MAX_MM))
