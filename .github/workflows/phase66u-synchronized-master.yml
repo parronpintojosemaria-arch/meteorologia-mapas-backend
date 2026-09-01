@@ -1,0 +1,289 @@
+name: Fase 66U · Integración maestra sincronizada de niveles y Jet
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66u-synchronized-master]
+    paths:
+      - "scripts/phase66u_select_cycle.py"
+      - "scripts/phase66u_run_layer.py"
+      - "scripts/build_phase66u_master_viewer.py"
+      - "scripts/smoke_phase66u_master.py"
+      - ".github/workflows/phase66u-synchronized-master.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  select:
+    name: Seleccionar ciclos completos comunes · 10 capas
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      ecmwf_run: ${{ steps.cycles.outputs.ecmwf_run }}
+      gfs_run: ${{ steps.cycles.outputs.gfs_run }}
+      icon_run: ${{ steps.cycles.outputs.icon_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis selector y orquestador
+        run: python -m py_compile scripts/phase66u_select_cycle.py scripts/phase66u_run_layer.py
+      - name: Seleccionar una pasada completa por modelo
+        id: cycles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/phase66u_select_cycle.py ecmwf | tee /tmp/phase66u-ecmwf.log
+          ECMWF_RUN="$(tail -n 1 /tmp/phase66u-ecmwf.log)"
+          python scripts/phase66u_select_cycle.py gfs | tee /tmp/phase66u-gfs.log
+          GFS_RUN="$(tail -n 1 /tmp/phase66u-gfs.log)"
+          python scripts/phase66u_select_cycle.py icon | tee /tmp/phase66u-icon.log
+          ICON_RUN="$(tail -n 1 /tmp/phase66u-icon.log)"
+          python - <<PY
+          from datetime import datetime
+          for name, value in {'ecmwf':'$ECMWF_RUN','gfs':'$GFS_RUN','icon':'$ICON_RUN'}.items():
+              dt=datetime.fromisoformat(value.replace('Z','+00:00'))
+              assert dt.tzinfo is not None, (name,value)
+              print(name, dt.isoformat())
+          PY
+          echo "ecmwf_run=$ECMWF_RUN" >> "$GITHUB_OUTPUT"
+          echo "gfs_run=$GFS_RUN" >> "$GITHUB_OUTPUT"
+          echo "icon_run=$ICON_RUN" >> "$GITHUB_OUTPUT"
+
+  generate:
+    name: ${{ matrix.label }} · ciclo sincronizado
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - slug: 500hpa
+            phase: 66J
+            phase_lc: 66j
+            label: 500 hPa
+            input: phase66j-input
+            output: experimental-phase66j
+            builder: build_phase66j_maplibre_viewer.py
+          - slug: 850hpa
+            phase: 66K
+            phase_lc: 66k
+            label: 850 hPa
+            input: phase66k-input
+            output: experimental-phase66k
+            builder: build_phase66k_maplibre_viewer.py
+          - slug: 700hpa
+            phase: 66L
+            phase_lc: 66l
+            label: 700 hPa
+            input: phase66l-input
+            output: experimental-phase66l
+            builder: build_phase66l_maplibre_viewer.py
+          - slug: 925hpa
+            phase: 66M
+            phase_lc: 66m
+            label: 925 hPa
+            input: phase66m-input
+            output: experimental-phase66m
+            builder: build_phase66m_maplibre_viewer.py
+          - slug: 300hpa
+            phase: 66N
+            phase_lc: 66n
+            label: 300 hPa
+            input: phase66n-input
+            output: experimental-phase66n
+            builder: build_phase66n_maplibre_viewer.py
+          - slug: 250hpa
+            phase: 66O
+            phase_lc: 66o
+            label: 250 hPa
+            input: phase66o-input
+            output: experimental-phase66o
+            builder: build_phase66o_maplibre_viewer.py
+          - slug: 200hpa
+            phase: 66P
+            phase_lc: 66p
+            label: 200 hPa
+            input: phase66p-input
+            output: experimental-phase66p
+            builder: build_phase66p_maplibre_viewer.py
+          - slug: jet300
+            phase: 66Q
+            phase_lc: 66q
+            label: Jet Stream 300 hPa
+            input: phase66q-input
+            output: experimental-phase66q
+            builder: build_phase66q_maplibre_viewer.py
+          - slug: jet250
+            phase: 66R
+            phase_lc: 66r
+            label: Jet Stream 250 hPa
+            input: phase66r-input
+            output: experimental-phase66r
+            builder: build_phase66r_maplibre_viewer.py
+          - slug: jet200
+            phase: 66S
+            phase_lc: 66s
+            label: Jet Stream 200 hPa
+            input: phase66s-input
+            output: experimental-phase66s
+            builder: build_phase66s_maplibre_viewer.py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar ECMWF con ciclo fijo
+        run: python scripts/phase66u_run_layer.py "${{ matrix.slug }}" ecmwf "${{ needs.select.outputs.ecmwf_run }}"
+      - name: Generar GFS con ciclo fijo
+        run: python scripts/phase66u_run_layer.py "${{ matrix.slug }}" gfs "${{ needs.select.outputs.gfs_run }}"
+      - name: Generar ICON-EU con ciclo fijo
+        run: python scripts/phase66u_run_layer.py "${{ matrix.slug }}" icon "${{ needs.select.outputs.icon_run }}"
+      - name: Validar manifiestos contra ciclos seleccionados
+        env:
+          INPUT_DIR: ${{ matrix.input }}
+          PHASE_LC: ${{ matrix.phase_lc }}
+          PHASE: ${{ matrix.phase }}
+          ECMWF_RUN: ${{ needs.select.outputs.ecmwf_run }}
+          GFS_RUN: ${{ needs.select.outputs.gfs_run }}
+          ICON_RUN: ${{ needs.select.outputs.icon_run }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          base=Path(os.environ['INPUT_DIR'])
+          expected={'ecmwf':os.environ['ECMWF_RUN'],'gfs':os.environ['GFS_RUN'],'icon':os.environ['ICON_RUN']}
+          wanted={'ecmwf':(85,360),'gfs':(129,384),'icon':(93,120)}
+          for model,(count,horizon) in wanted.items():
+              p=base/model/f"manifest-phase{os.environ['PHASE_LC']}.json"
+              d=json.loads(p.read_text(encoding='utf-8'))
+              assert d['phase']==os.environ['PHASE'] and d['status']=='ok', (model,d.get('failure_notes'))
+              assert d['run_utc']==expected[model], (model,d['run_utc'],expected[model])
+              assert d['summary']=={'successes':count,'failures':0,'expected':count}, (model,d['summary'])
+              assert d['horizon_hours']==horizon
+              assert len(list((base/model).glob('*.webp')))==count
+          print(os.environ['PHASE'], 'manifiestos sincronizados 3/3 OK')
+          PY
+      - name: Construir visor MapLibre de la capa
+        run: |
+          python -m py_compile "scripts/${{ matrix.builder }}"
+          python "scripts/${{ matrix.builder }}"
+      - name: Validar paquete de capa 307/307
+        env:
+          OUTPUT_DIR: ${{ matrix.output }}
+          PHASE_LC: ${{ matrix.phase_lc }}
+          PHASE: ${{ matrix.phase }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          out=Path(os.environ['OUTPUT_DIR'])
+          r=json.loads((out/f"report-phase{os.environ['PHASE_LC']}.json").read_text(encoding='utf-8'))
+          assert r['phase']==os.environ['PHASE'] and r['status']=='ok'
+          assert r['production_changed'] is False
+          assert r['total_maps']==307
+          assert len(list(out.glob('*/*.webp')))==307
+          print(os.environ['PHASE'], 'visor 307/307 OK')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66u-${{ matrix.slug }}-synchronized
+          path: ${{ matrix.output }}/
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
+
+  master:
+    name: Maestro sincronizado · 10 capas · 3070 mapas · navegador real
+    needs: [select, generate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fase66u-*-synchronized
+          path: phase66u-down
+      - name: Preparar las diez capas sincronizadas
+        run: |
+          python - <<'PY'
+          import shutil
+          from pathlib import Path
+          src=Path('phase66u-down'); out=Path('experimental-phase66u/layers')
+          mapping={
+              '500hpa':'fase66u-500hpa-synchronized','850hpa':'fase66u-850hpa-synchronized',
+              '700hpa':'fase66u-700hpa-synchronized','925hpa':'fase66u-925hpa-synchronized',
+              '300hpa':'fase66u-300hpa-synchronized','250hpa':'fase66u-250hpa-synchronized',
+              '200hpa':'fase66u-200hpa-synchronized','jet300':'fase66u-jet300-synchronized',
+              'jet250':'fase66u-jet250-synchronized','jet200':'fase66u-jet200-synchronized',
+          }
+          out.mkdir(parents=True, exist_ok=True)
+          for slug,name in mapping.items():
+              s=src/name
+              assert s.is_dir(), (slug,s)
+              shutil.copytree(s,out/slug)
+          print('66U capas preparadas', len(mapping))
+          PY
+      - name: Construir maestro sincronizado 66U
+        run: |
+          python -m py_compile scripts/build_phase66u_master_viewer.py scripts/smoke_phase66u_master.py
+          python scripts/build_phase66u_master_viewer.py
+      - name: Validar sincronización estricta y 3070 mapas
+        env:
+          ECMWF_RUN: ${{ needs.select.outputs.ecmwf_run }}
+          GFS_RUN: ${{ needs.select.outputs.gfs_run }}
+          ICON_RUN: ${{ needs.select.outputs.icon_run }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          out=Path('experimental-phase66u')
+          r=json.loads((out/'report-phase66u.json').read_text(encoding='utf-8'))
+          assert r['phase']=='66U' and r['status']=='ok'
+          assert r['integration_mode']=='synchronized_regeneration'
+          assert r['production_changed'] is False
+          assert r['layer_count']==10 and r['maps_per_layer']==307 and r['total_maps']==3070
+          expected={'ecmwf':os.environ['ECMWF_RUN'],'gfs':os.environ['GFS_RUN'],'icon':os.environ['ICON_RUN']}
+          assert r['selected_cycles']==expected, (r['selected_cycles'],expected)
+          assert all(v['same_cycle_across_layers'] and v['distinct_cycle_count']==1 for v in r['cycle_alignment'].values())
+          assert len(list((out/'layers').rglob('*.webp')))==3070
+          print('66U sincronización estricta OK · 10 capas · 3070/3070')
+          print('ciclos:', json.dumps(r['selected_cycles'], ensure_ascii=False))
+          PY
+      - name: Instalar Chromium de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Probar 30 combinaciones y últimos horizontes
+        run: |
+          python -m http.server 8778 --directory experimental-phase66u >/tmp/phase66u-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66u_master.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66u-master-synchronized-aloft
+          path: experimental-phase66u/
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
