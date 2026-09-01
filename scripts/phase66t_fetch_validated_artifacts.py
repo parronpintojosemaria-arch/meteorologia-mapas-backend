@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -48,9 +49,32 @@ def _json(url: str):
         return json.loads(r.read().decode("utf-8"))
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _download(url: str, path: Path):
+    # GitHub autentica la petición inicial y responde con una URL firmada de
+    # almacenamiento externo. Esa URL firmada debe abrirse SIN reenviar el
+    # Authorization de GitHub o el blob storage responde 401.
     req = urllib.request.Request(url, headers=_headers())
-    with urllib.request.urlopen(req, timeout=180) as r, path.open("wb") as f:
+    opener = urllib.request.build_opener(_NoRedirect())
+    try:
+        opener.open(req, timeout=90)
+        raise RuntimeError("GitHub no devolvió redirección para el artefacto")
+    except urllib.error.HTTPError as exc:
+        if exc.code not in {301, 302, 303, 307, 308}:
+            raise
+        signed_url = exc.headers.get("Location")
+        if not signed_url:
+            raise RuntimeError("Redirección de artefacto sin Location") from exc
+
+    signed_req = urllib.request.Request(
+        signed_url,
+        headers={"User-Agent": "phase66t-master-integration"},
+    )
+    with urllib.request.urlopen(signed_req, timeout=180) as r, path.open("wb") as f:
         shutil.copyfileobj(r, f, length=1024 * 1024)
 
 
