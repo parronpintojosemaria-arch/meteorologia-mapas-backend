@@ -1,0 +1,91 @@
+name: Fase 66T · Integración maestra de niveles y Jet
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66t-master-aloft-integration]
+    paths:
+      - "scripts/phase66t_fetch_validated_artifacts.py"
+      - "scripts/build_phase66t_master_viewer.py"
+      - "scripts/smoke_phase66t_master.py"
+      - ".github/workflows/phase66t-master-aloft-integration.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  integrate:
+    name: Maestro · 10 capas · 3070 mapas · navegador real
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validar sintaxis 66T
+        run: |
+          python -m py_compile \
+            scripts/phase66t_fetch_validated_artifacts.py \
+            scripts/build_phase66t_master_viewer.py \
+            scripts/smoke_phase66t_master.py
+
+      - name: Reunir artefactos MapLibre validados 66J-66S
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/phase66t_fetch_validated_artifacts.py
+
+      - name: Construir integración maestra 66T
+        run: python scripts/build_phase66t_master_viewer.py
+
+      - name: Validar 10 capas y 3070 mapas
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('experimental-phase66t')
+          r=json.loads((out/'report-phase66t.json').read_text(encoding='utf-8'))
+          s=json.loads((out/'sources-phase66t.json').read_text(encoding='utf-8'))
+          assert r['phase']=='66T' and r['status']=='ok'
+          assert r['production_changed'] is False
+          assert r['integration_mode']=='validated_artifact_composition'
+          assert r['layer_count']==10 and r['maps_per_layer']==307 and r['total_maps']==3070
+          assert len(s['layers'])==10
+          assert len(list((out/'layers').rglob('*.webp')))==3070
+          assert (out/'index.html').is_file()
+          html=(out/'index.html').read_text(encoding='utf-8')
+          for token in ('Fase 66T','Integración maestra','925/850/700/500/300/250/200 hPa','Jet 300/250/200 hPa','window.__phase66tState'):
+              assert token in html, token
+          for layer in r['layers']:
+              assert layer['maps']==307
+              assert layer['models']['ecmwf']=={'maps':85,'horizon':360}
+              assert layer['models']['gfs']=={'maps':129,'horizon':384}
+              assert layer['models']['icon']=={'maps':93,'horizon':120}
+          print('66T estático OK · 10 capas · 3070/3070 mapas · producción intacta')
+          print('Alineación de ciclos:', json.dumps(r['cycle_alignment'], ensure_ascii=False))
+          PY
+
+      - name: Instalar Chromium de prueba
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+
+      - name: Probar integración maestra en navegador real
+        run: |
+          python -m http.server 8777 --directory experimental-phase66t >/tmp/phase66t-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66t_master.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66t-master-aloft-integration
+          path: experimental-phase66t/
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
