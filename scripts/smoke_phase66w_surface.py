@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+# Trazabilidad 66W: relanzar tras sincronizar el guard operativo de precipitación ICON-EU desde main.
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
