@@ -60,7 +60,7 @@ window.__phase66wSurfaceReady=false; window.__phase66wSurfaceState={{}};
 function fillProducts(){{productEl.innerHTML='';for(const p of DATA[modelEl.value].products){{const o=document.createElement('option');o.value=p;o.textContent=LABELS[p]||p;productEl.appendChild(o)}}fillSteps()}}
 function fillSteps(){{stepEl.innerHTML='';for(const s of DATA[modelEl.value].steps){{const o=document.createElement('option');o.value=s.key;o.textContent=`+${{s.hour}} h`;stepEl.appendChild(o)}}render()}}
 function row(){{return DATA[modelEl.value].steps.find(x=>x.key===stepEl.value)}}
-function render(){{if(!map.loaded())return;const s=row(),p=productEl.value,r=s?.products?.[p]; if(map.getLayer('weather'))map.removeLayer('weather');if(map.getSource('weather'))map.removeSource('weather');
+function render(){{const s=row(),p=productEl.value,r=s?.products?.[p]; if(map.getLayer('weather'))map.removeLayer('weather');if(map.getSource('weather'))map.removeSource('weather');
 let overlayReady=false;if(r){{const b=r.bounds;map.addSource('weather',{{type:'image',url:`${{modelEl.value}}/${{r.image}}`,coordinates:[[b.west,b.north],[b.east,b.north],[b.east,b.south],[b.west,b.south]]}});map.addLayer({{id:'weather',type:'raster',source:'weather',paint:{{'raster-opacity':0.88}}}});map.fitBounds([[b.west,b.south],[b.east,b.north]],{{padding:20,duration:0}});overlayReady=true}}
 meta.textContent=`${{DATA[modelEl.value].name}} · ciclo ${{DATA[modelEl.value].run_utc}} · ${{LABELS[p]||p}} · ${{s?`+${{s.hour}} h`:''}} · ${{DATA[modelEl.value].snow_semantics}}`;
 window.__phase66wSurfaceState={{model:modelEl.value,product:p,step:s?.hour??null,overlayReady}};}}
