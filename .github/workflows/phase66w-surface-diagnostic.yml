@@ -1,0 +1,63 @@
+name: Fase 66W · Diagnóstico aislado superficie
+
+on:
+  push:
+    branches: [phase66w-full-operational-dry-run]
+    paths:
+      - 'scripts/phase66w_surface_diag.py'
+      - 'scripts/smoke_phase66w_surface_diag.py'
+      - '.github/workflows/phase66w-surface-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: 66W · diagnosticar visor superficie existente
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Descargar solo artefactos de superficie ya validados
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fase66w-surface-*
+          path: phase66w-down
+          merge-multiple: false
+          run-id: 33605195458
+      - name: Preparar superficie sin consultar proveedores
+        run: |
+          python - <<'PY'
+          import shutil
+          from pathlib import Path
+          src=Path('phase66w-down'); out=Path('diag-phase66w-surface')
+          shutil.rmtree(out,ignore_errors=True); out.mkdir(parents=True)
+          for model in ('ecmwf','gfs','icon'):
+              s=src/f'fase66w-surface-{model}'
+              assert s.is_dir(),s
+              shutil.copytree(s,out/model)
+          PY
+          python scripts/phase66w_surface_diag.py
+      - name: Instalar navegador real
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Diagnosticar las 16 combinaciones
+        run: |
+          python -m http.server 8780 --directory diag-phase66w-surface >/tmp/phase66w-surface-diag-http.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66w_surface_diag.py
+      - name: Subir diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66w-surface-diagnostic
+          path: diag-phase66w-surface
+          retention-days: 3
