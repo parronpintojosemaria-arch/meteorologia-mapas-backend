@@ -18,6 +18,7 @@ import ecmwf_surface_phase2 as es
 import gfs_temperature_phase20 as g20
 import gfs_surface_phase21 as g21
 import gfs_precip_snow_phase23 as g23
+import icon_eu_precip_consistency_operational as icon_precip_guard
 import icon_eu_surface_production_phase42 as p42
 
 OUT = ROOT / 'candidate-phase66w-surface'
@@ -162,6 +163,10 @@ def gfs(run_dt):
 
 def icon(run_dt):
     base=OUT/'icon'
+    # Reutiliza exactamente el guard operativo de Fase 55: conserva todos los
+    # diagnósticos y aplica el límite duro al interior de la malla, no al halo
+    # exterior afectado por cuantización/interpolación. No modifica los datos.
+    p42.s38.precip_consistency=icon_precip_guard.precip_consistency
     p42.PUBLIC=base
     p42.STEPS=ICON_STEPS
     p42.h37.choose_run=lambda:run_dt
