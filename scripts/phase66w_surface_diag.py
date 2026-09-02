@@ -10,9 +10,31 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / 'diag-phase66w-surface'
 
 
+def normalize_image(model: str, raw_image: str) -> str:
+    raw = Path(str(raw_image).replace('\\', '/'))
+    direct = BASE / model / raw
+    if direct.is_file():
+        return raw.as_posix()
+    if raw.parts and raw.parts[0] == model:
+        trimmed = Path(*raw.parts[1:])
+        candidate = BASE / model / trimmed
+        if candidate.is_file():
+            return trimmed.as_posix()
+    raise RuntimeError(f'{model}: ruta de imagen no resoluble {raw_image!r}')
+
+
 def main():
     data = b.surface_data(BASE)
-    # Comprobación de contrato antes de abrir navegador.
+    normalized=[]
+    for model, model_data in data.items():
+        for step in model_data['steps']:
+            for product, meta in step['products'].items():
+                before=meta['image']
+                after=normalize_image(model,before)
+                meta['image']=after
+                if before!=after:
+                    normalized.append({'model':model,'step':step['key'],'product':product,'before':before,'after':after})
+
     expected = {'ecmwf': (360, 5), 'gfs': (384, 5), 'icon': (120, 6)}
     contract = []
     for model, (horizon, nprod) in expected.items():
@@ -30,11 +52,12 @@ def main():
             bounds = meta.get('bounds') or {}
             if not all(k in bounds for k in ('west','east','south','north')):
                 raise RuntimeError(f'{model}/{product}: bounds inválidos {bounds}')
+    report={'status':'ok','checks':contract,'normalized_paths':normalized,'normalized_count':len(normalized)}
     (BASE/'contract-phase66w-surface-diag.json').write_text(
-        json.dumps({'status':'ok','checks':contract}, ensure_ascii=False, indent=2)+'\n', encoding='utf-8'
+        json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf-8'
     )
     b.make_surface_viewer(BASE, data)
-    print(json.dumps({'status':'ok','contract':contract}, ensure_ascii=False), flush=True)
+    print(json.dumps(report, ensure_ascii=False), flush=True)
 
 
 if __name__ == '__main__':
