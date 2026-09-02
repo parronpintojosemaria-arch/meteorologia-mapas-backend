@@ -29,6 +29,8 @@ jobs:
           path: phase66w-down
           merge-multiple: false
           run-id: 33605195458
+          repository: parronpintojosemaria-arch/meteorologia-mapas-backend
+          github-token: ${{ github.token }}
       - name: Preparar superficie sin consultar proveedores
         run: |
           python - <<'PY'
