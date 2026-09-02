@@ -31,13 +31,41 @@ def atomic_write_json(path: Path, data):
     os.replace(tmp,path)
 
 
+def normalize_surface_image(release_surface: Path, model: str, raw_image: str) -> str:
+    """Resuelve la ruta publicada sin asumir un único convenio de manifiesto.
+
+    ECMWF/GFS guardan `image` relativo a la raíz del artefacto del modelo.
+    ICON-EU (bloque operativo heredado) incluye además el prefijo `icon/`.
+    El release ya monta cada artefacto bajo `surface/<model>/`, por lo que se
+    conserva la ruta que exista físicamente y, solo si es necesario, se elimina
+    exactamente un prefijo igual al modelo. No se modifican imágenes ni datos.
+    """
+    raw = Path(str(raw_image).replace('\\', '/'))
+    direct = release_surface / model / raw
+    if direct.is_file():
+        return raw.as_posix()
+    if raw.parts and raw.parts[0] == model:
+        trimmed = Path(*raw.parts[1:])
+        candidate = release_surface / model / trimmed
+        if candidate.is_file():
+            return trimmed.as_posix()
+    raise RuntimeError(f'{model}: ruta de imagen de superficie no resoluble {raw_image!r}')
+
+
 def surface_data(release_surface: Path):
     data={}
     for model in MODELS:
         d=read_json(release_surface/model/'manifest-phase66w-surface.json')
         steps=[]
         for sk,row in d['surface'].items():
-            steps.append({'key':sk,'hour':int(sk[1:]),'products':{k:v for k,v in row.items() if isinstance(v,dict) and v.get('status')=='ok' and v.get('image')}})
+            products={}
+            for key,value in row.items():
+                if not (isinstance(value,dict) and value.get('status')=='ok' and value.get('image')):
+                    continue
+                meta=dict(value)
+                meta['image']=normalize_surface_image(release_surface,model,meta['image'])
+                products[key]=meta
+            steps.append({'key':sk,'hour':int(sk[1:]),'products':products})
         data[model]={
             'name':d['model'],'run_utc':d['run_utc'],'horizon':d['horizon_hours'],'products':d['products'],
             'snow_semantics':d['snow_semantics'],'steps':steps,
