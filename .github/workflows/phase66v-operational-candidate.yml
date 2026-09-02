@@ -1,0 +1,118 @@
+name: Fase 66V · Ciclo operativo común superficie + atmósfera
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase66v-operational-candidate]
+    paths:
+      - "scripts/phase66v_select_full_cycle.py"
+      - "scripts/build_phase66v_master_contract.py"
+      - ".github/workflows/phase66v-operational-candidate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    name: ${{ matrix.label }} · validar superficie + 7 niveles + 3 Jet
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - model: ecmwf
+            label: ECMWF IFS
+            horizon: 360
+            surface_fields: 6
+          - model: gfs
+            label: NOAA GFS
+            horizon: 384
+            surface_fields: 6
+          - model: icon
+            label: DWD ICON-EU
+            horizon: 120
+            surface_fields: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validar sintaxis 66V
+        run: python -m py_compile scripts/phase66v_select_full_cycle.py scripts/build_phase66v_master_contract.py
+      - name: Seleccionar pasada completa del modelo
+        run: python scripts/phase66v_select_full_cycle.py "${{ matrix.model }}"
+      - name: Validar contrato del selector
+        env:
+          MODEL: ${{ matrix.model }}
+          HORIZON: ${{ matrix.horizon }}
+          SURFACE_FIELDS: ${{ matrix.surface_fields }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('candidate-phase66v-selector')/os.environ['MODEL']/'manifest-phase66v-selector.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['phase']=='66V' and d['status']=='ok'
+          assert d['production_changed'] is False
+          assert d['validated_horizon_hours']==int(os.environ['HORIZON'])
+          assert len(d['surface_probe'])==int(os.environ['SURFACE_FIELDS'])
+          assert d['pressure_levels_hpa']==[925,850,700,500,300,250,200]
+          assert d['jet_levels_hpa']==[300,250,200]
+          assert d['selected_run_utc']
+          print(os.environ['MODEL'], '66V OK · ciclo', d['selected_run_utc'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66v-selector-${{ matrix.model }}
+          path: candidate-phase66v-selector/${{ matrix.model }}/
+          retention-days: 7
+          if-no-files-found: error
+
+  contract:
+    name: Contrato maestro 66V · 3 modelos · sin producción
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fase66v-selector-*
+          path: phase66v-down
+      - name: Construir contrato maestro
+        run: python scripts/build_phase66v_master_contract.py
+      - name: Validación final del candidato
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('candidate-phase66v/report-phase66v.json').read_text(encoding='utf-8'))
+          assert r['phase']=='66V' and r['status']=='ok'
+          assert r['production_changed'] is False
+          assert r['ready_for_full_regeneration_dry_run'] is True
+          assert set(r['models'])=={'ecmwf','gfs','icon'}
+          assert set(r['selected_cycles'])=={'ecmwf','gfs','icon'}
+          assert r['models']['ecmwf']['horizon_hours']==360
+          assert r['models']['gfs']['horizon_hours']==384
+          assert r['models']['icon']['horizon_hours']==120
+          assert r['pressure_levels_hpa']==[925,850,700,500,300,250,200]
+          assert r['jet_levels_hpa']==[300,250,200]
+          print('66V contrato maestro OK')
+          print(json.dumps(r['selected_cycles'], ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase66v-master-cycle-contract
+          path: candidate-phase66v/
+          retention-days: 7
+          if-no-files-found: error
