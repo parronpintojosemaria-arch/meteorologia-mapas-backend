@@ -1,0 +1,245 @@
+name: Fase 66Z · Candidato rápido schema66 · sin deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase66z-production-candidate
+    paths:
+      - ".github/workflows/phase66z-production-candidate-fast.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase66z-production-candidate
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: 66Z rápido · 4861 + legado · bajo 950 MiB · sin deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install "Pillow>=10.0"
+
+      - name: Localizar último Pages publicado
+        id: live
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=github-pages&per_page=100" > /tmp/pages.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          d=json.load(open('/tmp/pages.json'))
+          a=[x for x in d.get('artifacts',[]) if x.get('name')=='github-pages' and not x.get('expired') and x.get('workflow_run',{}).get('id')]
+          a.sort(key=lambda x:x.get('created_at',''),reverse=True)
+          if not a: raise SystemExit('No hay artefacto Pages vigente')
+          x=a[0]
+          print('run_id='+str(x['workflow_run']['id']))
+          print('artifact_id='+str(x['id']))
+          print('created_at='+x.get('created_at',''))
+          PY
+
+      - name: Descargar Pages actual
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _pages
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.live.outputs.run_id }}
+
+      - name: Extraer base, fijar rollback y quitar solo multicalidad
+        env:
+          LIVE_RUN_ID: ${{ steps.live.outputs.run_id }}
+          LIVE_ARTIFACT_ID: ${{ steps.live.outputs.artifact_id }}
+          LIVE_CREATED_AT: ${{ steps.live.outputs.created_at }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site phase66z-fast-report
+          mapfile -t TARFILES < <(find _pages -type f -name artifact.tar)
+          test "${#TARFILES[@]}" -eq 1
+          tar -xf "${TARFILES[0]}" -C _site
+          test -f _site/index.html
+          rm -rf _site/v66 _site/quality
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('_site')
+          report={
+            'schema':66,'phase':'66Z','source_pages_run_id':int(os.environ['LIVE_RUN_ID']),
+            'source_pages_artifact_id':int(os.environ['LIVE_ARTIFACT_ID']),
+            'source_created_at':os.environ['LIVE_CREATED_AT'],
+            'base_bytes_without_quality':sum(p.stat().st_size for p in root.rglob('*') if p.is_file()),
+            'legacy_webp':sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp')),
+            'production_changed':False
+          }
+          Path('phase66z-fast-report/base.json').write_text(json.dumps(report,indent=2)+'\n')
+          print(report)
+          PY
+
+      - name: Descargar 66W
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66w-full-operational-dry-run
+          path: _phase66w
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33728051327
+
+      - name: Descargar extras 66Y
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fase66y-extra-*
+          path: _extras_download
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33785764817
+
+      - name: Integrar schema66 completo
+        run: |
+          set -euo pipefail
+          mkdir -p _extras/ecmwf _extras/gfs _extras/icon
+          cp -a _extras_download/fase66y-extra-ecmwf/. _extras/ecmwf/
+          cp -a _extras_download/fase66y-extra-gfs/. _extras/gfs/
+          cp -a _extras_download/fase66y-extra-icon/. _extras/icon/
+          PHASE66W_SOURCE_DIR=_phase66w PHASE66X_SITE_DIR=_site python scripts/phase66x_prepare_pages_candidate.py
+          PHASE66X_SITE_DIR=_site python scripts/phase66x_build_catalog.py
+          PHASE66Y_SITE_DIR=_site PHASE66Y_EXTRA_DIR=_extras python scripts/phase66y_merge_extras.py
+
+      - name: Validar contrato 4861 antes de optimizar
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          c=json.loads((root/'catalog.json').read_text())
+          assert c['schema']==66 and c['summary']['total_maps']==4861
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          assert c['compatibility']['preserves_current_production_products'] is True
+          release=root/c['base_path']
+          assert len(list(release.rglob('*.webp')))==4861
+          print('4861/4861 OK')
+          PY
+
+      - name: Optimizar WebP en paralelo sin cambiar resolución
+        run: |
+          cat > /tmp/optimize66z.py <<'PY'
+          import io,json,os
+          from concurrent.futures import ProcessPoolExecutor
+          from pathlib import Path
+          from PIL import Image
+
+          root=Path('_site')
+          c=json.loads((root/'v66/catalog.json').read_text())
+          release=root/'v66'/c['base_path']
+          vfiles=sorted(release.rglob('*.webp'))
+          assert len(vfiles)==4861
+          legacy=[p for m in ('ecmwf','gfs','icon-eu') for p in (root/m).rglob('*.webp')]
+          other_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and p not in set(vfiles))
+          vbefore=sum(p.stat().st_size for p in vfiles)
+
+          n=min(36,len(vfiles)); ids=[round(i*(len(vfiles)-1)/(n-1)) for i in range(n)]
+          sample=[vfiles[i] for i in ids]; sb=sum(p.stat().st_size for p in sample)
+          target=880*1024*1024
+          estimates=[]; chosen=54
+          for q in (82,76,70,64,58,54):
+              out=0
+              for p in sample:
+                  with Image.open(p) as im:
+                      b=io.BytesIO(); im.save(b,'WEBP',quality=q,method=4); out+=len(b.getvalue())
+              ratio=out/sb
+              est=other_bytes+int(vbefore*ratio)
+              estimates.append({'quality':q,'ratio':ratio,'estimated_site_bytes':est})
+              if est<=target:
+                  chosen=q; break
+
+          def recode(arg):
+              path,q=arg; p=Path(path); tmp=p.with_suffix('.tmp.webp')
+              with Image.open(p) as im:
+                  im.load(); size=im.size; im.save(tmp,'WEBP',quality=q,method=4)
+              with Image.open(tmp) as chk:
+                  if chk.size!=size: raise RuntimeError(f'dimensión alterada {p}')
+              os.replace(tmp,p)
+              return p.stat().st_size
+
+          print('Calidad v66 elegida:',chosen)
+          with ProcessPoolExecutor(max_workers=4) as ex:
+              list(ex.map(recode,[(str(p),chosen) for p in vfiles],chunksize=10))
+
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          legacy_quality=None
+          if site>940*1024*1024 and legacy:
+              legacy_quality=58
+              print('Ajuste de fallback legado a q58; URLs y dimensiones intactas')
+              with ProcessPoolExecutor(max_workers=4) as ex:
+                  list(ex.map(recode,[(str(p),legacy_quality) for p in legacy],chunksize=10))
+              site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+
+          after=sum(p.stat().st_size for p in vfiles)
+          r={'schema':66,'phase':'66Z','v66_quality':chosen,'legacy_quality_if_needed':legacy_quality,
+             'sample_estimates':estimates,'v66_before_bytes':vbefore,'v66_after_bytes':after,
+             'site_bytes':site,'site_mib':round(site/1024/1024,2),'production_changed':False}
+          Path('phase66z-fast-report/compression.json').write_text(json.dumps(r,indent=2)+'\n')
+          print(json.dumps(r,indent=2))
+          PY
+          python /tmp/optimize66z.py
+
+      - name: Guard final 4861 + 950 MiB
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site'); vr=root/'v66'
+          c=json.loads((vr/'catalog.json').read_text()); release=vr/c['base_path']
+          files=sorted(release.rglob('*.webp'))
+          assert len(files)==4861
+          refs=[]
+          for row in c['surface'].values():
+              for step in row['steps']:
+                  refs += [m['image'] for m in step['products'].values() if isinstance(m,dict) and m.get('image')]
+          for kind in ('pressure','jet'):
+              for level in c['aloft'][kind].values():
+                  for model in level['models'].values(): refs += [m['image'] for m in model['maps']]
+          assert len(refs)==4861 and len(set(refs))==4861
+          assert not [x for x in refs if not (release/x).is_file()]
+          for p in files[::40]:
+              with Image.open(p) as im: im.verify()
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          if site>950*1024*1024:
+              raise SystemExit(f'BLOQUEADO sin deploy: {site/1024/1024:.2f} MiB > 950 MiB')
+          out={'schema':66,'phase':'66Z','status':'ok','maps':4861,'site_bytes':site,'site_mib':round(site/1024/1024,2),'ready_for_production_cutover':True,'production_changed':False}
+          Path('phase66z-fast-report/final.json').write_text(json.dumps(out,indent=2)+'\n')
+          print('66Z RÁPIDO VERDE',out)
+          PY
+
+      - name: Evidencia 66Z
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66z-fast-report
+          path: phase66z-fast-report/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Sin deploy
+        if: success()
+        run: echo "Candidato validado. Producción intacta."
