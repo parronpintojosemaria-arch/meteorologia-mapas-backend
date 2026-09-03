@@ -20,9 +20,18 @@ import gfs_surface_phase21 as g21
 import gfs_precip_snow_phase23 as g23
 import icon_eu_precip_consistency_operational as icon_precip_guard
 import icon_eu_surface_production_phase42 as p42
+from phase66w_surface_domain import (
+    GLOBAL_EXPECTED_CELL_BOUNDS,
+    GLOBAL_REQUESTED_BOUNDS,
+    apply_global_surface_domain,
+)
+
+# ECMWF/GFS usan en 66W exactamente la misma ventana amplia que las capas
+# atmosféricas globales. ICON-EU conserva su dominio regional nativo.
+apply_global_surface_domain(es, g20, g21, g23)
 
 OUT = ROOT / 'candidate-phase66w-surface'
-EXPECTED_BOUNDS = {'west': -25.125, 'east': 45.125, 'south': 19.875, 'north': 72.125}
+EXPECTED_BOUNDS = GLOBAL_EXPECTED_CELL_BOUNDS
 ECMWF_STEPS = tuple(range(0, 145, 3)) + tuple(range(150, 361, 6))
 GFS_STEPS = tuple(range(0, 385, 3))
 ICON_STEPS = tuple(range(0, 79)) + tuple(range(81, 121, 3))
@@ -38,7 +47,9 @@ def parse_run(raw: str):
 def check_bounds(bounds, label, tol=1e-6):
     for key, expected in EXPECTED_BOUNDS.items():
         if abs(float(bounds[key]) - expected) > tol:
-            raise RuntimeError(f'{label}: límites inesperados {bounds}')
+            raise RuntimeError(
+                f'{label}: límites inesperados {bounds}; esperado {EXPECTED_BOUNDS}'
+            )
 
 
 def rel(base: Path, out: Path):
@@ -63,6 +74,8 @@ def ecmwf(run_dt):
         'step_rule': '+0…+144 cada 3 h; +150…+360 cada 6 h',
         'products': ['temperature_2m','wind_10m','cloud_cover_total','precipitation_total','snowfall_water_equivalent'],
         'snow_semantics': 'sf acumulado · equivalente en agua (mm), no espesor de nieve',
+        'requested_bounds': dict(GLOBAL_REQUESTED_BOUNDS),
+        'domain_policy': 'mismo dominio amplio que las capas atmosféricas ECMWF/GFS: 45°O…45°E, 20°N…67°N',
         'publication_policy': 'solo horas oficiales; sin interpolación ni horas inventadas',
         'surface': {},
     }
@@ -117,6 +130,8 @@ def gfs(run_dt):
         'run_utc':run_dt.isoformat(),'horizon_hours':384,'forecast_steps':list(steps),'step_rule':'+0…+384 cada 3 h',
         'products':['temperature_2m','wind_10m','cloud_cover_total','precipitation_total','snow_depth'],
         'snow_semantics':'SNOD instantáneo · espesor de nieve en el suelo (cm), no equivalente en agua',
+        'requested_bounds':dict(GLOBAL_REQUESTED_BOUNDS),
+        'domain_policy':'mismo dominio amplio que las capas atmosféricas ECMWF/GFS: 45°O…45°E, 20°N…67°N',
         'publication_policy':'solo horas oficiales; sin interpolación ni horas inventadas','surface':{}
     }
     successes,failures=0,[]
