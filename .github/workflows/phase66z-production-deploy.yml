@@ -1,0 +1,212 @@
+name: Fase 66Z · Publicar schema66 validado en producción
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase66z-production-candidate
+    paths:
+      - ".github/workflows/phase66z-production-deploy.yml"
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: phase66z-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 66Z · 4861 mapas · q54 · publicar Pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout 66Z validado
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install "Pillow>=10.0"
+
+      - name: Descargar Pages de rollback exacto
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _pages
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33747684669
+
+      - name: Extraer base pública validada
+        run: |
+          set -euo pipefail
+          mkdir -p _site phase66z-production-report
+          mapfile -t TARFILES < <(find _pages -type f -name artifact.tar)
+          test "${#TARFILES[@]}" -eq 1
+          tar -xf "${TARFILES[0]}" -C _site
+          test -f _site/index.html
+          rm -rf _site/v66 _site/quality
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site')
+          out={
+            'schema':66,
+            'phase':'66Z',
+            'source_pages_run_id':33747684669,
+            'source_pages_artifact_id':9891011814,
+            'base_bytes_without_quality':sum(p.stat().st_size for p in root.rglob('*') if p.is_file()),
+            'legacy_webp':sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp'))
+          }
+          assert out['legacy_webp']==2116, out
+          Path('phase66z-production-report/base.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(out)
+          PY
+
+      - name: Descargar núcleo 66W exacto
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66w-full-operational-dry-run
+          path: _phase66w
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33728051327
+
+      - name: Descargar extras 66Y exactos
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fase66y-extra-*
+          path: _extras_download
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33785764817
+
+      - name: Integrar schema66 exacto
+        run: |
+          set -euo pipefail
+          mkdir -p _extras/ecmwf _extras/gfs _extras/icon
+          cp -a _extras_download/fase66y-extra-ecmwf/. _extras/ecmwf/
+          cp -a _extras_download/fase66y-extra-gfs/. _extras/gfs/
+          cp -a _extras_download/fase66y-extra-icon/. _extras/icon/
+          PHASE66W_SOURCE_DIR=_phase66w PHASE66X_SITE_DIR=_site python scripts/phase66x_prepare_pages_candidate.py
+          PHASE66X_SITE_DIR=_site python scripts/phase66x_build_catalog.py
+          PHASE66Y_SITE_DIR=_site PHASE66Y_EXTRA_DIR=_extras python scripts/phase66y_merge_extras.py
+
+      - name: Validar contrato 4861 antes de compresión
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          c=json.loads((root/'catalog.json').read_text())
+          assert c['schema']==66
+          assert c['status']=='ok'
+          assert c['summary']['total_maps']==4861
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          assert c['compatibility']['preserves_current_production_products'] is True
+          assert len(list((root/c['base_path']).rglob('*.webp')))==4861
+          print('Contrato schema66 previo OK · 4861/4861')
+          PY
+
+      - name: Aplicar exactamente q54 validado por 66Z
+        run: |
+          cat > /tmp/recode66z.py <<'PY'
+          import json,os
+          from concurrent.futures import ProcessPoolExecutor
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site')
+          c=json.loads((root/'v66/catalog.json').read_text())
+          release=root/'v66'/c['base_path']
+          files=sorted(release.rglob('*.webp'))
+          assert len(files)==4861
+          before=sum(p.stat().st_size for p in files)
+          def recode(path):
+              p=Path(path); tmp=p.with_suffix('.tmp.webp')
+              with Image.open(p) as im:
+                  im.load(); size=im.size
+                  im.save(tmp,'WEBP',quality=54,method=4)
+              with Image.open(tmp) as chk:
+                  if chk.size!=size:
+                      raise RuntimeError(f'dimensión alterada {p}')
+              os.replace(tmp,p)
+              return p.stat().st_size
+          with ProcessPoolExecutor(max_workers=4) as ex:
+              list(ex.map(recode,[str(p) for p in files],chunksize=10))
+          after=sum(p.stat().st_size for p in files)
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          out={'schema':66,'phase':'66Z','v66_quality':54,'legacy_quality':None,'maps':4861,'v66_before_bytes':before,'v66_after_bytes':after,'site_bytes':site,'site_mib':round(site/1024/1024,2)}
+          Path('phase66z-production-report/compression.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(json.dumps(out,indent=2))
+          PY
+          python /tmp/recode66z.py
+
+      - name: Guard final producción 4861 + 950 MiB
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site'); vr=root/'v66'
+          c=json.loads((vr/'catalog.json').read_text())
+          release=vr/c['base_path']
+          files=sorted(release.rglob('*.webp'))
+          assert c['schema']==66 and c['status']=='ok'
+          assert c['summary']['total_maps']==4861
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          assert c['compatibility']['preserves_current_production_products'] is True
+          assert len(files)==4861
+          refs=[]
+          for row in c['surface'].values():
+              for step in row['steps']:
+                  refs += [m['image'] for m in step['products'].values() if isinstance(m,dict) and m.get('image')]
+          for kind in ('pressure','jet'):
+              for level in c['aloft'][kind].values():
+                  for model in level['models'].values():
+                      refs += [m['image'] for m in model['maps']]
+          assert len(refs)==4861 and len(set(refs))==4861
+          missing=[x for x in refs if not (release/x).is_file()]
+          assert not missing, missing[:5]
+          for p in files[::40]:
+              with Image.open(p) as im: im.verify()
+          legacy=sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp'))
+          assert legacy==2116, legacy
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          assert site<=950*1024*1024, f'{site/1024/1024:.2f} MiB > 950 MiB'
+          out={'schema':66,'phase':'66Z','status':'ok','maps':4861,'legacy_webp':legacy,'site_bytes':site,'site_mib':round(site/1024/1024,2),'ready_for_deploy':True}
+          Path('phase66z-production-report/final.json').write_text(json.dumps(out,indent=2)+'\n')
+          print('PRODUCCIÓN LISTA',out)
+          PY
+
+      - name: Guardar informe de producción
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66z-production-report
+          path: phase66z-production-report/
+          retention-days: 30
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Subir sitio schema66
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+          retention-days: 1
+
+      - name: Publicar schema66
+        id: deployment
+        uses: actions/deploy-pages@v4
