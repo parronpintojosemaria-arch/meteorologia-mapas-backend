@@ -1,0 +1,132 @@
+name: Fase 66Z · Smoke público schema66
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase66z-production-candidate
+    paths:
+      - ".github/workflows/phase66z-public-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase66z-public-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: 66Z · catálogo + mapas públicos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Pillow
+        run: pip install "Pillow>=10.0"
+
+      - name: Descargar catálogo público con reintentos
+        run: |
+          set -euo pipefail
+          curl -fL --retry 12 --retry-all-errors --retry-delay 3 \
+            -H 'Cache-Control: no-cache' \
+            'https://parronpintojosemaria-arch.github.io/meteorologia-mapas-backend/v66/catalog.json' \
+            -o /tmp/catalog.json
+
+      - name: Validar catálogo y mapas reales públicos
+        run: |
+          python - <<'PY'
+          import json, urllib.request, time
+          from pathlib import Path
+          from PIL import Image
+
+          root='https://parronpintojosemaria-arch.github.io/meteorologia-mapas-backend/v66/'
+          c=json.loads(Path('/tmp/catalog.json').read_text())
+          assert c['schema']==66
+          assert c['status']=='ok'
+          assert c['summary']['total_maps']==4861
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          assert c['compatibility']['preserves_current_production_products'] is True
+          base=root+c['base_path'].strip('/')+'/'
+
+          samples=[]
+
+          # Una referencia de superficie por modelo.
+          for model in ('ecmwf','gfs','icon'):
+              row=c['surface'][model]
+              picked=None
+              for step in row['steps']:
+                  for product,meta in step['products'].items():
+                      if isinstance(meta,dict) and meta.get('image'):
+                          picked=(f'surface-{model}-{product}',meta['image'])
+                          break
+                  if picked: break
+              assert picked, model
+              samples.append(picked)
+
+          # Presión: una por modelo, preferentemente 500 hPa.
+          pressure=c['aloft']['pressure']
+          level='500' if '500' in pressure else next(iter(pressure))
+          for model in ('ecmwf','gfs','icon'):
+              maps=pressure[level]['models'][model]['maps']
+              assert maps
+              samples.append((f'pressure-{level}-{model}',maps[0]['image']))
+
+          # Jet: una por modelo, preferentemente 300 hPa.
+          jet=c['aloft']['jet']
+          level='300' if '300' in jet else next(iter(jet))
+          for model in ('ecmwf','gfs','icon'):
+              maps=jet[level]['models'][model]['maps']
+              assert maps
+              samples.append((f'jet-{level}-{model}',maps[0]['image']))
+
+          results=[]
+          for name,rel in samples:
+              url=base+rel
+              dest=Path('/tmp')/(name+'.webp')
+              last=None
+              for attempt in range(8):
+                  try:
+                      req=urllib.request.Request(url,headers={'User-Agent':'schema66-public-smoke/1.0','Cache-Control':'no-cache'})
+                      with urllib.request.urlopen(req,timeout=30) as r:
+                          data=r.read()
+                          status=r.status
+                      dest.write_bytes(data)
+                      with Image.open(dest) as im:
+                          im.verify()
+                      with Image.open(dest) as im:
+                          dims=list(im.size)
+                      results.append({'name':name,'image':rel,'url':url,'http':status,'bytes':len(data),'dimensions':dims})
+                      print(name,status,len(data),dims,rel)
+                      break
+                  except Exception as e:
+                      last=e
+                      time.sleep(3)
+              else:
+                  raise RuntimeError(f'{name}: no accesible públicamente: {last}')
+
+          out={
+            'schema':66,
+            'phase':'66Z',
+            'status':'ok',
+            'catalog_public':True,
+            'total_maps':c['summary']['total_maps'],
+            'samples_checked':len(results),
+            'samples':results
+          }
+          Path('phase66z-public-smoke.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(json.dumps(out,indent=2))
+          PY
+
+      - name: Subir evidencia smoke
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66z-public-smoke
+          path: phase66z-public-smoke.json
+          if-no-files-found: warn
+          retention-days: 30
