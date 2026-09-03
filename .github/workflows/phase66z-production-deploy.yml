@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     environment:
-      name: github-pages
+      name: schema66-production
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout 66Z validado
