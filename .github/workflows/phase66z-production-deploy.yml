@@ -68,9 +68,9 @@ jobs:
             'source_pages_run_id':33747684669,
             'source_pages_artifact_id':9891011814,
             'base_bytes_without_quality':sum(p.stat().st_size for p in root.rglob('*') if p.is_file()),
-            'legacy_webp':sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp'))
+            'legacy_webp_before_migration':sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp'))
           }
-          assert out['legacy_webp']==2116, out
+          assert out['legacy_webp_before_migration']==2116, out
           Path('phase66z-production-report/base.json').write_text(json.dumps(out,indent=2)+'\n')
           print(out)
           PY
@@ -148,7 +148,7 @@ jobs:
               list(ex.map(recode,[str(p) for p in files],chunksize=10))
           after=sum(p.stat().st_size for p in files)
           site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
-          out={'schema':66,'phase':'66Z','v66_quality':54,'legacy_quality':None,'maps':4861,'v66_before_bytes':before,'v66_after_bytes':after,'site_bytes':site,'site_mib':round(site/1024/1024,2)}
+          out={'schema':66,'phase':'66Z','v66_quality':54,'maps':4861,'v66_before_bytes':before,'v66_after_bytes':after,'site_bytes':site,'site_mib':round(site/1024/1024,2)}
           Path('phase66z-production-report/compression.json').write_text(json.dumps(out,indent=2)+'\n')
           print(json.dumps(out,indent=2))
           PY
@@ -182,20 +182,22 @@ jobs:
           assert not missing, missing[:5]
           for p in files[::40]:
               with Image.open(p) as im: im.verify()
-          legacy=sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp'))
-          assert legacy==2116, legacy
+          legacy_after=sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp'))
+          assert legacy_after==0, legacy_after
           site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
           assert site<=950*1024*1024, f'{site/1024/1024:.2f} MiB > 950 MiB'
-          out={'schema':66,'phase':'66Z','status':'ok','maps':4861,'legacy_webp':legacy,'site_bytes':site,'site_mib':round(site/1024/1024,2),'ready_for_deploy':True}
+          out={'schema':66,'phase':'66Z','status':'ok','maps':4861,'legacy_webp_after_migration':legacy_after,'legacy_routes_removed_for_pages_limit':True,'site_bytes':site,'site_mib':round(site/1024/1024,2),'ready_for_deploy':True}
           Path('phase66z-production-report/final.json').write_text(json.dumps(out,indent=2)+'\n')
           print('PRODUCCIÓN LISTA',out)
           PY
 
       - name: Guardar informe de producción
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fase66z-production-report
           path: phase66z-production-report/
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Configurar GitHub Pages
