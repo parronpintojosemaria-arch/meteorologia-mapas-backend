@@ -1,0 +1,221 @@
+name: Fase 66Y · Compatibilidad completa schema66 · sin producción
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase66y-schema66-full-compatibility
+    paths:
+      - ".github/workflows/phase66y-schema66-full-compatibility.yml"
+      - "scripts/phase66y_generate_extra.py"
+      - "scripts/phase66y_merge_extras.py"
+      - "scripts/smoke_phase66y_pages.py"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase66y-schema66-full-compatibility
+  cancel-in-progress: true
+
+env:
+  ECMWF_RUN_UTC: "2026-09-02T12:00:00+00:00"
+  GFS_RUN_UTC: "2026-09-03T00:00:00+00:00"
+  ICON_RUN_UTC: "2026-09-03T00:00:00+00:00"
+
+jobs:
+  extras:
+    name: 66Y · preservar ${{ matrix.model }}
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [ecmwf, gfs, icon]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar capas existentes del mismo ciclo
+        run: python scripts/phase66y_generate_extra.py ${{ matrix.model }}
+
+      - name: Validar artefacto extra
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          model=os.environ['MODEL']
+          base=Path('phase66y-extra')/model
+          d=json.loads((base/'manifest-phase66y-extra.json').read_text(encoding='utf-8'))
+          wanted={'ecmwf':36,'gfs':38,'icon':92}[model]
+          run={'ecmwf':os.environ['ECMWF_RUN_UTC'],'gfs':os.environ['GFS_RUN_UTC'],'icon':os.environ['ICON_RUN_UTC']}[model]
+          assert d['schema']==66 and d['phase']=='66Y' and d['status']=='ok'
+          assert d['run_utc']==run and d['summary']['maps']==wanted and d['production_changed'] is False
+          maps=list(base.rglob('*.webp'))
+          assert len(maps)==wanted, (model,len(maps),wanted)
+          print(f'66Y {model} OK · {wanted} mapas · ciclo {run}')
+          PY
+
+      - name: Subir extra
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66y-extra-${{ matrix.model }}
+          path: phase66y-extra/${{ matrix.model }}/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  integrate:
+    name: 66Y · 4861 mapas · catálogo · navegador · sin deploy
+    needs: [extras]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Descargar núcleo 66W exacto validado
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66w-full-operational-dry-run
+          path: _phase66w
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33728051327
+
+      - name: Descargar extra ECMWF
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66y-extra-ecmwf
+          path: _extras/ecmwf
+
+      - name: Descargar extra GFS
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66y-extra-gfs
+          path: _extras/gfs
+
+      - name: Descargar extra ICON-EU
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66y-extra-icon
+          path: _extras/icon
+
+      - name: Preparar núcleo v66 validado
+        env:
+          PHASE66W_SOURCE_DIR: _phase66w
+          PHASE66X_SITE_DIR: _site
+        run: |
+          python scripts/phase66x_prepare_pages_candidate.py
+          PHASE66X_SITE_DIR=_site python scripts/phase66x_build_catalog.py
+
+      - name: Fusionar todas las capas actuales
+        env:
+          PHASE66Y_SITE_DIR: _site
+          PHASE66Y_EXTRA_DIR: _extras
+        run: python scripts/phase66y_merge_extras.py
+
+      - name: Validar contrato completo 4861
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          latest=json.loads((root/'latest.json').read_text(encoding='utf-8'))
+          health=json.loads((root/'health.json').read_text(encoding='utf-8'))
+          cat=json.loads((root/'catalog.json').read_text(encoding='utf-8'))
+          report=json.loads((root/'report-phase66y.json').read_text(encoding='utf-8'))
+          assert latest['schema']==66 and latest['phase']=='66Y' and latest['status']=='staged'
+          assert latest['total_maps']==4861 and latest['compatibility_ready'] is True and latest['production_changed'] is False
+          assert health['status']=='ok' and health['total_maps']==4861 and health['extra_compatibility_maps']==166
+          assert cat['schema']==66 and cat['phase']=='66Y' and cat['summary']['core_maps']==4695
+          assert cat['summary']['extra_compatibility_maps']==166 and cat['summary']['total_maps']==4861
+          assert cat['compatibility']['ready_for_plugin_cutover'] is True
+          assert cat['compatibility']['preserves_current_production_products'] is True
+          assert report['extras']=={'ecmwf':36,'gfs':38,'icon':92} and report['total_maps']==4861
+          release=root/latest['base_path']
+          webps=list(release.rglob('*.webp'))
+          assert len(webps)==4861, len(webps)
+          refs=[]
+          for model,row in cat['surface'].items():
+              for step in row['steps']:
+                  refs += [m['image'] for m in step['products'].values() if isinstance(m,dict) and m.get('image')]
+          for kind in ('pressure','jet'):
+              for level in cat['aloft'][kind].values():
+                  for model in level['models'].values():
+                      refs += [m['image'] for m in model['maps']]
+          assert len(refs)==4861 and len(set(refs))==4861, (len(refs),len(set(refs)))
+          missing=[p for p in refs if not (release/p).is_file()]
+          assert not missing, missing[:3]
+          print('66Y contrato OK · 4861/4861 referencias físicas · compatibilidad completa · sin producción')
+          PY
+
+      - name: Instalar Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+
+      - name: Probar capas preservadas en navegador real
+        env:
+          PHASE66Y_BASE_URL: http://127.0.0.1:8781
+          PHASE66Y_SITE_DIR: _site
+        run: |
+          python -m http.server 8781 --directory _site >/tmp/phase66y-http.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66y_pages.py
+
+      - name: Cierre 66Y
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          r=json.loads((root/'report-phase66y.json').read_text(encoding='utf-8'))
+          b=json.loads((root/'browser-smoke-phase66y.json').read_text(encoding='utf-8'))
+          c=json.loads((root/'catalog.json').read_text(encoding='utf-8'))
+          assert r['status']=='ok' and r['total_maps']==4861 and r['production_changed'] is False
+          assert b['status']=='ok' and b['browser_checks']==5 and b['production_changed'] is False
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          print('66Y FINAL OK · 4861 mapas · 5/5 extras navegador · listo para plugin · sin producción')
+          PY
+
+      - name: Preparar evidencia ligera
+        run: |
+          mkdir -p phase66y-validation
+          cp _site/v66/latest.json phase66y-validation/
+          cp _site/v66/health.json phase66y-validation/
+          cp _site/v66/report-phase66y.json phase66y-validation/
+          cp _site/v66/browser-smoke-phase66y.json phase66y-validation/
+          cp _site/v66/browser-smoke-phase66y.png phase66y-validation/
+          cp _site/v66/catalog.json phase66y-validation/
+          cp _site/v66/extras.html phase66y-validation/
+
+      - name: Subir evidencia 66Y
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66y-validation
+          path: phase66y-validation/
+          if-no-files-found: error
+          retention-days: 7
