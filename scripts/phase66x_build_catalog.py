@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,22 +11,27 @@ SITE = Path(os.environ.get("PHASE66X_SITE_DIR", ROOT / "_site"))
 V66 = SITE / "v66"
 
 LAYER_SPECS = (
-    {"slug": "925hpa", "kind": "pressure", "level_hpa": 925, "label": "925 hPa"},
-    {"slug": "850hpa", "kind": "pressure", "level_hpa": 850, "label": "850 hPa"},
-    {"slug": "700hpa", "kind": "pressure", "level_hpa": 700, "label": "700 hPa"},
-    {"slug": "500hpa", "kind": "pressure", "level_hpa": 500, "label": "500 hPa"},
-    {"slug": "300hpa", "kind": "pressure", "level_hpa": 300, "label": "300 hPa"},
-    {"slug": "250hpa", "kind": "pressure", "level_hpa": 250, "label": "250 hPa"},
-    {"slug": "200hpa", "kind": "pressure", "level_hpa": 200, "label": "200 hPa"},
-    {"slug": "jet300", "kind": "jet", "level_hpa": 300, "label": "Jet Stream 300 hPa"},
-    {"slug": "jet250", "kind": "jet", "level_hpa": 250, "label": "Jet Stream 250 hPa"},
-    {"slug": "jet200", "kind": "jet", "level_hpa": 200, "label": "Jet Stream 200 hPa"},
+    {"slug": "925hpa", "kind": "pressure", "level_hpa": 925, "label": "925 hPa", "phase": "66M", "report": "report-phase66m.json"},
+    {"slug": "850hpa", "kind": "pressure", "level_hpa": 850, "label": "850 hPa", "phase": "66K", "report": "report-phase66k.json"},
+    {"slug": "700hpa", "kind": "pressure", "level_hpa": 700, "label": "700 hPa", "phase": "66L", "report": "report-phase66l.json"},
+    {"slug": "500hpa", "kind": "pressure", "level_hpa": 500, "label": "500 hPa", "phase": "66J", "report": "report-phase66j.json"},
+    {"slug": "300hpa", "kind": "pressure", "level_hpa": 300, "label": "300 hPa", "phase": "66N", "report": "report-phase66n.json"},
+    {"slug": "250hpa", "kind": "pressure", "level_hpa": 250, "label": "250 hPa", "phase": "66O", "report": "report-phase66o.json"},
+    {"slug": "200hpa", "kind": "pressure", "level_hpa": 200, "label": "200 hPa", "phase": "66P", "report": "report-phase66p.json"},
+    {"slug": "jet300", "kind": "jet", "level_hpa": 300, "label": "Jet Stream 300 hPa", "phase": "66Q", "report": "report-phase66q.json"},
+    {"slug": "jet250", "kind": "jet", "level_hpa": 250, "label": "Jet Stream 250 hPa", "phase": "66R", "report": "report-phase66r.json"},
+    {"slug": "jet200", "kind": "jet", "level_hpa": 200, "label": "Jet Stream 200 hPa", "phase": "66S", "report": "report-phase66s.json"},
 )
 
 EXPECTED_STEPS = {
     "ecmwf": 85,
     "gfs": 129,
     "icon": 93,
+}
+EXPECTED_HORIZONS = {
+    "ecmwf": 360,
+    "gfs": 384,
+    "icon": 120,
 }
 MODEL_LABELS = {
     "ecmwf": "ECMWF IFS",
@@ -97,36 +103,101 @@ def build_surface(release: Path):
     return out, refs
 
 
-def _find_manifest(model_dir: Path):
-    hits = [p for p in model_dir.glob("manifest-phase66*.json") if p.is_file()]
-    if len(hits) != 1:
-        raise RuntimeError(f"66X catálogo: {model_dir} manifiestos atmosféricos={len(hits)}")
-    return hits[0]
+def _extract_layer_data(index_path: Path) -> dict:
+    """Lee el contrato DATA que los visores 66J..66S publican y 66U valida.
+
+    El maestro 66U no copia los manifiestos fuente dentro de cada carpeta de
+    modelo. En cambio, valida explícitamente este DATA del visor contra cada
+    report de capa y contra los 307 WebP físicos. Por tanto esta es la fuente
+    autoritativa disponible dentro del release ensamblado, no una ruta inferida.
+    """
+    html = index_path.read_text(encoding="utf-8")
+    match = re.search(r"const DATA=(\{.*?\}), \$=id=>", html, flags=re.S)
+    if not match:
+        raise RuntimeError(f"66X catálogo: no se pudo extraer DATA de {index_path}")
+    data = json.loads(match.group(1))
+    if not isinstance(data, dict):
+        raise RuntimeError(f"66X catálogo: DATA inválido en {index_path}")
+    return data
 
 
-def build_aloft(release: Path):
+def _validate_master_66u(aloft_root: Path, selected_cycles: dict) -> dict:
+    report_path = aloft_root / "report-phase66u.json"
+    if not report_path.is_file():
+        raise RuntimeError("66X catálogo: falta report-phase66u.json")
+    master = read_json(report_path)
+    if master.get("phase") != "66U" or master.get("status") != "ok":
+        raise RuntimeError("66X catálogo: maestro 66U inválido")
+    if master.get("production_changed") is not False:
+        raise RuntimeError("66X catálogo: maestro 66U declara cambio de producción")
+    if int(master.get("layer_count", -1)) != 10 or int(master.get("maps_per_layer", -1)) != 307 or int(master.get("total_maps", -1)) != 3070:
+        raise RuntimeError(f"66X catálogo: conteos maestro 66U inválidos {master}")
+    if master.get("selected_cycles") != selected_cycles:
+        raise RuntimeError(
+            f"66X catálogo: ciclos 66U {master.get('selected_cycles')} != release {selected_cycles}"
+        )
+    layer_rows = master.get("layers", [])
+    if not isinstance(layer_rows, list) or len(layer_rows) != 10:
+        raise RuntimeError("66X catálogo: resumen de capas 66U inválido")
+    return master
+
+
+def build_aloft(release: Path, selected_cycles: dict):
+    aloft_root = release / "aloft"
+    master = _validate_master_66u(aloft_root, selected_cycles)
+    master_layers = {row.get("slug"): row for row in master.get("layers", []) if isinstance(row, dict)}
+
     out = {"pressure": {}, "jet": {}}
     refs = []
     for spec in LAYER_SPECS:
-        layer_dir = release / "aloft" / "layers" / spec["slug"]
-        if not layer_dir.is_dir():
-            raise RuntimeError(f"66X catálogo: falta capa {spec['slug']}")
+        layer_dir = aloft_root / "layers" / spec["slug"]
+        report_path = layer_dir / spec["report"]
+        index_path = layer_dir / "index.html"
+        if not layer_dir.is_dir() or not report_path.is_file() or not index_path.is_file():
+            raise RuntimeError(f"66X catálogo: faltan piezas de capa {spec['slug']}")
+
+        layer_report = read_json(report_path)
+        if layer_report.get("phase") != spec["phase"] or layer_report.get("status") != "ok":
+            raise RuntimeError(f"66X catálogo: report {spec['slug']} inválido")
+        if layer_report.get("production_changed") is not False or int(layer_report.get("total_maps", -1)) != 307:
+            raise RuntimeError(f"66X catálogo: resumen {spec['slug']} inválido")
+
+        master_row = master_layers.get(spec["slug"])
+        if not isinstance(master_row, dict) or master_row.get("phase") != spec["phase"] or int(master_row.get("maps", -1)) != 307:
+            raise RuntimeError(f"66X catálogo: capa {spec['slug']} no coincide con maestro 66U")
+
+        data = _extract_layer_data(index_path)
         models = {}
         for model in ("ecmwf", "gfs", "icon"):
-            model_dir = layer_dir / model
-            manifest_path = _find_manifest(model_dir)
-            manifest = read_json(manifest_path)
-            if manifest.get("status") != "ok" or manifest.get("schema") != 66:
-                raise RuntimeError(f"66X catálogo: {spec['slug']} {model} manifiesto inválido")
+            d = data.get(model)
+            if not isinstance(d, dict):
+                raise RuntimeError(f"66X catálogo: {spec['slug']} DATA sin {model}")
+            raw_maps = d.get("maps", {})
+            raw_steps = d.get("steps", [])
+            if not isinstance(raw_maps, dict) or len(raw_maps) != EXPECTED_STEPS[model]:
+                raise RuntimeError(
+                    f"66X catálogo: {spec['slug']} {model} mapas={len(raw_maps) if isinstance(raw_maps, dict) else 'inválido'}"
+                )
+            if len(raw_steps) != EXPECTED_STEPS[model] or max(map(int, raw_steps)) != EXPECTED_HORIZONS[model]:
+                raise RuntimeError(f"66X catálogo: {spec['slug']} {model} pasos/horizonte inválidos")
+            if d.get("run_utc") != selected_cycles[model]:
+                raise RuntimeError(
+                    f"66X catálogo: {spec['slug']} {model} ciclo {d.get('run_utc')} != {selected_cycles[model]}"
+                )
+
+            summary = layer_report.get("models", {}).get(model, {})
+            if int(summary.get("maps", -1)) != EXPECTED_STEPS[model] or int(summary.get("horizon", -1)) != EXPECTED_HORIZONS[model]:
+                raise RuntimeError(f"66X catálogo: report {spec['slug']} {model} no coincide con DATA")
+
             maps = []
-            raw_maps = manifest.get("maps", {})
-            if len(raw_maps) != EXPECTED_STEPS[model]:
-                raise RuntimeError(f"66X catálogo: {spec['slug']} {model} mapas={len(raw_maps)}")
+            model_dir = layer_dir / model
             for sk, meta in sorted(raw_maps.items(), key=lambda kv: int(kv[0][1:])):
-                if not isinstance(meta, dict) or meta.get("status") != "ok" or not meta.get("image"):
-                    raise RuntimeError(f"66X catálogo: {spec['slug']} {model} {sk} no disponible")
-                full_rel = f"aloft/layers/{spec['slug']}/{model}/{meta['image']}"
-                if not (release / full_rel).is_file():
+                if not isinstance(meta, dict) or not meta.get("image") or not isinstance(meta.get("bounds"), dict):
+                    raise RuntimeError(f"66X catálogo: {spec['slug']} {model} {sk} metadata incompleta")
+                image_name = Path(str(meta["image"]).replace("\\", "/")).name
+                full_rel = f"aloft/layers/{spec['slug']}/{model}/{image_name}"
+                physical = release / full_rel
+                if not physical.is_file():
                     raise RuntimeError(f"66X catálogo: falta {full_rel}")
                 row = {
                     "key": sk,
@@ -134,30 +205,28 @@ def build_aloft(release: Path):
                     "image": full_rel,
                     "bounds": meta.get("bounds"),
                 }
-                for key in (
-                    "valid_time", "valid_utc", "temperature_range_c",
-                    "geopotential_height_range_m", "wind_speed_range_ms",
-                    "mean_sea_level_pressure_range_hpa",
-                ):
-                    if key in meta:
-                        row[key] = meta[key]
+                if "size" in meta:
+                    row["size"] = meta["size"]
                 maps.append(row)
                 refs.append(full_rel)
+
             models[model] = {
-                "model": manifest.get("model") or MODEL_LABELS[model],
-                "data_provider": manifest.get("data_provider"),
-                "run_utc": manifest.get("run_utc"),
-                "horizon_hours": manifest.get("horizon_hours"),
-                "generated_steps": manifest.get("generated_steps"),
-                "display_bounds": manifest.get("display_bounds"),
-                "projection": manifest.get("projection"),
-                "source_cadence": manifest.get("source_cadence"),
-                "publication_policy": manifest.get("publication_policy"),
+                "model": d.get("model") or MODEL_LABELS[model],
+                "data_provider": d.get("provider"),
+                "run_utc": d.get("run_utc"),
+                "horizon_hours": EXPECTED_HORIZONS[model],
+                "generated_steps": [int(x) for x in raw_steps],
+                "display_bounds": d.get("display_bounds"),
+                "projection": "EPSG:3857",
+                "source_cadence": None,
+                "publication_policy": "solo pasos oficiales disponibles; nunca interpolar ni inventar horas",
                 "maps": maps,
             }
+
         out[spec["kind"]][str(spec["level_hpa"])] = {
             "slug": spec["slug"],
             "label": spec["label"],
+            "source_phase": spec["phase"],
             "models": models,
         }
     return out, refs
@@ -171,8 +240,9 @@ def main():
     if not release.is_dir():
         raise RuntimeError("66X catálogo: release no existe")
 
+    selected_cycles = latest.get("selected_cycles", {})
     surface, surface_refs = build_surface(release)
-    aloft, aloft_refs = build_aloft(release)
+    aloft, aloft_refs = build_aloft(release, selected_cycles)
     refs = surface_refs + aloft_refs
     if len(surface_refs) != 1625:
         raise RuntimeError(f"66X catálogo: referencias superficie={len(surface_refs)} != 1625")
@@ -187,7 +257,7 @@ def main():
         "status": "ok",
         "release_id": latest["release_id"],
         "base_path": latest["base_path"],
-        "selected_cycles": latest["selected_cycles"],
+        "selected_cycles": selected_cycles,
         "model_labels": MODEL_LABELS,
         "surface": surface,
         "aloft": aloft,
@@ -203,6 +273,11 @@ def main():
             "ecmwf_icon_snow": "equivalente en agua",
             "gfs_snow": "espesor en suelo",
             "safe_labels_required": True,
+        },
+        "metadata_contract": {
+            "aloft_source": "66U report + validated layer viewer DATA",
+            "per_model_source_manifests_required_in_release": False,
+            "physical_map_validation": True,
         },
         "production_changed": False,
     }
