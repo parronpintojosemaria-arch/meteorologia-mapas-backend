@@ -1,0 +1,109 @@
+name: Fase 66X · Candidato Pages schema 66 · sin producción
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase66x-schema66-pages-integration
+    paths:
+      - ".github/workflows/phase66x-schema66-pages-candidate.yml"
+      - "scripts/phase66x_prepare_pages_candidate.py"
+      - "scripts/smoke_phase66x_pages.py"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase66x-schema66-pages-candidate
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: 66X · schema66 · 4695 mapas · navegador · sin deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Descargar candidato 66W exacto validado
+        uses: actions/download-artifact@v4
+        with:
+          name: fase66w-full-operational-dry-run
+          path: _phase66w
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33728051327
+
+      - name: Preparar namespace v66 sin producción
+        env:
+          PHASE66W_SOURCE_DIR: _phase66w
+          PHASE66X_SITE_DIR: _site
+        run: python scripts/phase66x_prepare_pages_candidate.py
+
+      - name: Validar contrato estático schema 66
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          latest=json.loads((root/'latest.json').read_text(encoding='utf-8'))
+          health=json.loads((root/'health.json').read_text(encoding='utf-8'))
+          report=json.loads((root/'report-phase66x.json').read_text(encoding='utf-8'))
+          assert latest['schema']==66 and latest['phase']=='66X' and latest['status']=='staged'
+          assert latest['production_changed'] is False and latest['total_maps']==4695
+          assert health['status']=='ok' and health['surface_maps']==1625 and health['aloft_maps']==3070 and health['total_maps']==4695
+          assert health['production_changed'] is False
+          assert report['schema']==66 and report['phase']=='66X' and report['source_phase']=='66W' and report['production_changed'] is False
+          rel=root/latest['base_path']
+          assert rel.is_dir()
+          assert len(list(rel.rglob('*.webp')))==4695
+          assert (rel/'surface/index.html').is_file() and (rel/'aloft/index.html').is_file()
+          print('66X contrato estático OK · schema66 · 4695 mapas · puntero staged · sin producción')
+          PY
+
+      - name: Instalar Chromium para smoke de integración
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+
+      - name: Probar v66 en navegador real
+        env:
+          PHASE66X_BASE_URL: http://127.0.0.1:8780
+          PHASE66X_SITE_DIR: _site
+        run: |
+          python -m http.server 8780 --directory _site >/tmp/phase66x-http.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" || true' EXIT
+          sleep 2
+          python scripts/smoke_phase66x_pages.py
+
+      - name: Validación final de integración
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          h=json.loads((root/'health.json').read_text(encoding='utf-8'))
+          b=json.loads((root/'browser-smoke-phase66x.json').read_text(encoding='utf-8'))
+          assert h['status']=='ok' and h['total_maps']==4695 and h['production_changed'] is False
+          assert b['status']=='ok' and b['schema']==66 and b['surface_browser_checks']==3 and b['aloft_browser_checks']==10
+          assert b['production_changed'] is False
+          print('66X FINAL OK · schema66 · 4695 mapas · integración navegador OK · sin producción')
+          PY
+
+      - name: Subir candidato Pages 66X
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase66x-schema66-pages-candidate
+          path: _site/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
