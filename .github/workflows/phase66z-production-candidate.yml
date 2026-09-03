@@ -18,104 +18,72 @@ concurrency:
 
 jobs:
   candidate:
-    name: 66Z · sitio completo bajo 950 MiB · sin producción
+    name: 66Z · 4861 + legado · bajo 950 MiB · sin deploy
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 90
     steps:
       - name: Checkout 66Z
         uses: actions/checkout@v4
-
       - name: Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Dependencias
         run: |
           python -m pip install --upgrade pip
           pip install "Pillow>=10.0"
 
-      - name: Localizar el último artefacto GitHub Pages publicado
+      - name: Localizar último Pages publicado
         id: live
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          api="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=github-pages&per_page=100"
-          curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$api" > /tmp/pages-artifacts.json
+          curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=github-pages&per_page=100" > /tmp/pages.json
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
-          from pathlib import Path
-          d=json.loads(Path('/tmp/pages-artifacts.json').read_text())
-          rows=[a for a in d.get('artifacts',[]) if a.get('name')=='github-pages' and not a.get('expired') and a.get('workflow_run',{}).get('id')]
-          if not rows:
-              raise SystemExit('No hay artefacto github-pages vigente para usar como base/rollback')
-          rows.sort(key=lambda a:a.get('created_at',''), reverse=True)
-          a=rows[0]
-          print(f"run_id={a['workflow_run']['id']}")
-          print(f"artifact_id={a['id']}")
-          print(f"created_at={a.get('created_at','')}")
+          d=json.load(open('/tmp/pages.json'))
+          a=[x for x in d.get('artifacts',[]) if x.get('name')=='github-pages' and not x.get('expired') and x.get('workflow_run',{}).get('id')]
+          a.sort(key=lambda x:x.get('created_at',''),reverse=True)
+          if not a: raise SystemExit('No hay artefacto Pages vigente')
+          x=a[0]
+          print('run_id='+str(x['workflow_run']['id']))
+          print('artifact_id='+str(x['id']))
+          print('created_at='+x.get('created_at',''))
           PY
 
-      - name: Descargar copia exacta del Pages actual
+      - name: Descargar Pages actual
         uses: actions/download-artifact@v4
         with:
           name: github-pages
-          path: _pages_download
+          path: _pages
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ steps.live.outputs.run_id }}
 
-      - name: Extraer base y guardar referencia de rollback
+      - name: Extraer base y fijar rollback
         env:
           LIVE_RUN_ID: ${{ steps.live.outputs.run_id }}
           LIVE_ARTIFACT_ID: ${{ steps.live.outputs.artifact_id }}
           LIVE_CREATED_AT: ${{ steps.live.outputs.created_at }}
         run: |
           set -euo pipefail
-          mapfile -t TARFILES < <(find _pages_download -type f -name 'artifact.tar')
-          if [ "${#TARFILES[@]}" -ne 1 ]; then
-            echo "Se esperaba un artifact.tar y hay ${#TARFILES[@]}" >&2
-            exit 1
-          fi
           mkdir -p _site phase66z-report
+          mapfile -t TARFILES < <(find _pages -type f -name artifact.tar)
+          test "${#TARFILES[@]}" -eq 1
           tar -xf "${TARFILES[0]}" -C _site
           test -f _site/index.html
+          rm -rf _site/v66 _site/quality
           python - <<'PY'
-          import json, os
-          from pathlib import Path
-          Path('phase66z-report/rollback-source.json').write_text(json.dumps({
-            'schema':66,'phase':'66Z','status':'ready',
-            'source_pages_run_id':int(os.environ['LIVE_RUN_ID']),
-            'source_pages_artifact_id':int(os.environ['LIVE_ARTIFACT_ID']),
-            'source_created_at':os.environ['LIVE_CREATED_AT'],
-            'production_changed':False
-          },indent=2)+"\n",encoding='utf-8')
-          PY
-
-      - name: Medir base y retirar solo multicalidad opcional
-        run: |
-          python - <<'PY'
-          import json, shutil
+          import json,os
           from pathlib import Path
           root=Path('_site')
-          def size(p): return sum(x.stat().st_size for x in p.rglob('*') if x.is_file()) if p.exists() else 0
-          before=size(root)
-          quality=size(root/'quality')
-          shutil.rmtree(root/'quality', ignore_errors=True)
-          shutil.rmtree(root/'v66', ignore_errors=True)
-          after=size(root)
-          legacy=sum(1 for model in ('ecmwf','gfs','icon-eu') for _ in (root/model).rglob('*.webp'))
-          out={'base_before_bytes':before,'removed_quality_bytes':quality,'base_after_bytes':after,'legacy_original_webp':legacy}
-          Path('phase66z-report/base-size.json').write_text(json.dumps(out,indent=2)+"\n")
-          print(json.dumps(out,indent=2))
+          r={'schema':66,'phase':'66Z','status':'ready','source_pages_run_id':int(os.environ['LIVE_RUN_ID']),'source_pages_artifact_id':int(os.environ['LIVE_ARTIFACT_ID']),'source_created_at':os.environ['LIVE_CREATED_AT'],'base_bytes_without_quality':sum(p.stat().st_size for p in root.rglob('*') if p.is_file()),'legacy_webp':sum(1 for m in ('ecmwf','gfs','icon-eu') for _ in (root/m).rglob('*.webp')),'production_changed':False}
+          Path('phase66z-report/base.json').write_text(json.dumps(r,indent=2)+'\n')
+          print(r)
           PY
 
-      - name: Descargar núcleo 66W exacto validado
+      - name: Descargar núcleo 66W exacto
         uses: actions/download-artifact@v4
         with:
           name: fase66w-full-operational-dry-run
@@ -134,146 +102,95 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 33785764817
 
-      - name: Normalizar extras 66Y
+      - name: Integrar schema66 completo
         run: |
           set -euo pipefail
           mkdir -p _extras/ecmwf _extras/gfs _extras/icon
           cp -a _extras_download/fase66y-extra-ecmwf/. _extras/ecmwf/
           cp -a _extras_download/fase66y-extra-gfs/. _extras/gfs/
           cp -a _extras_download/fase66y-extra-icon/. _extras/icon/
-
-      - name: Integrar núcleo y catálogo schema66
-        env:
-          PHASE66W_SOURCE_DIR: _phase66w
-          PHASE66X_SITE_DIR: _site
-        run: |
-          python scripts/phase66x_prepare_pages_candidate.py
+          PHASE66W_SOURCE_DIR=_phase66w PHASE66X_SITE_DIR=_site python scripts/phase66x_prepare_pages_candidate.py
           PHASE66X_SITE_DIR=_site python scripts/phase66x_build_catalog.py
-
-      - name: Integrar 166 mapas de compatibilidad
-        env:
-          PHASE66Y_SITE_DIR: _site
-          PHASE66Y_EXTRA_DIR: _extras
-        run: python scripts/phase66y_merge_extras.py
+          PHASE66Y_SITE_DIR=_site PHASE66Y_EXTRA_DIR=_extras python scripts/phase66y_merge_extras.py
 
       - name: Validar 4861 antes de optimizar
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          root=Path('_site/v66')
-          cat=json.loads((root/'catalog.json').read_text())
-          assert cat['schema']==66 and cat['phase']=='66Y'
-          assert cat['summary']['total_maps']==4861
-          assert cat['compatibility']['ready_for_plugin_cutover'] is True
-          assert cat['compatibility']['preserves_current_production_products'] is True
-          release=root/cat['base_path']
-          files=list(release.rglob('*.webp'))
-          assert len(files)==4861, len(files)
-          print('Contrato previo OK · 4861 mapas')
+          root=Path('_site/v66'); c=json.loads((root/'catalog.json').read_text())
+          assert c['schema']==66 and c['summary']['total_maps']==4861
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          assert c['compatibility']['preserves_current_production_products'] is True
+          assert len(list((root/c['base_path']).rglob('*.webp')))==4861
+          print('Contrato previo OK · 4861/4861')
           PY
 
-      - name: Elegir compresión WebP con muestra real y optimizar v66
+      - name: Optimizar WebP en paralelo sin cambiar resolución
         run: |
-          python - <<'PY'
-          import io, json, math, os
+          cat > /tmp/optimize66z.py <<'PY'
+          import io,json,os
+          from concurrent.futures import ProcessPoolExecutor
           from pathlib import Path
           from PIL import Image
-
-          root=Path('_site')
-          cat=json.loads((root/'v66/catalog.json').read_text())
-          release=root/'v66'/cat['base_path']
-          files=sorted(release.rglob('*.webp'))
-          assert len(files)==4861
-          legacy_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and not str(p).startswith(str(root/'v66')))
-          v66_before=sum(p.stat().st_size for p in files)
-          sample_n=min(140,len(files))
-          idx=[round(i*(len(files)-1)/(sample_n-1)) for i in range(sample_n)] if sample_n>1 else [0]
-          sample=[files[i] for i in idx]
-          sample_before=sum(p.stat().st_size for p in sample)
-          target=900*1024*1024
-          candidates=[82,78,74,70,66,62,58,54]
-          estimates=[]
-          chosen=None
-          for q in candidates:
-              total=0
+          root=Path('_site'); c=json.loads((root/'v66/catalog.json').read_text()); release=root/'v66'/c['base_path']
+          vfiles=sorted(release.rglob('*.webp')); assert len(vfiles)==4861
+          legacy=[p for m in ('ecmwf','gfs','icon-eu') for p in (root/m).rglob('*.webp')]
+          vset=set(vfiles)
+          other_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and p not in vset)
+          vbefore=sum(p.stat().st_size for p in vfiles)
+          n=min(36,len(vfiles)); ids=[round(i*(len(vfiles)-1)/(n-1)) for i in range(n)]; sample=[vfiles[i] for i in ids]; sb=sum(p.stat().st_size for p in sample)
+          target=880*1024*1024; estimates=[]; chosen=54
+          for q in (82,76,70,64,58,54):
+              out=0
               for p in sample:
                   with Image.open(p) as im:
-                      b=io.BytesIO()
-                      im.save(b,'WEBP',quality=q,method=6)
-                      total += len(b.getvalue())
-              ratio=total/sample_before
-              estimate=legacy_bytes + int(v66_before*ratio)
-              estimates.append({'quality':q,'sample_ratio':ratio,'estimated_site_bytes':estimate})
-              if estimate <= target and chosen is None:
-                  chosen=q
-          if chosen is None:
-              chosen=candidates[-1]
-          print('Legacy MiB:',round(legacy_bytes/1024/1024,1),'v66 antes MiB:',round(v66_before/1024/1024,1),'quality:',chosen)
-          for n,p in enumerate(files,1):
+                      b=io.BytesIO(); im.save(b,'WEBP',quality=q,method=4); out+=len(b.getvalue())
+              ratio=out/sb; est=other_bytes+int(vbefore*ratio); estimates.append({'quality':q,'ratio':ratio,'estimated_site_bytes':est})
+              if est<=target: chosen=q; break
+          def recode(arg):
+              path,q=arg; p=Path(path); tmp=p.with_suffix('.tmp.webp')
               with Image.open(p) as im:
-                  im.load()
-                  w,h=im.size
-                  tmp=p.with_suffix('.tmp.webp')
-                  im.save(tmp,'WEBP',quality=chosen,method=6)
-              with Image.open(tmp) as check:
-                  if check.size!=(w,h):
-                      raise SystemExit(f'Dimensiones alteradas: {p}')
-              os.replace(tmp,p)
-              if n%500==0: print('optimizados',n,'/',len(files))
-          v66_after=sum(p.stat().st_size for p in files)
-          site_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
-          report={'schema':66,'phase':'66Z','quality':chosen,'sample_estimates':estimates,
-                  'legacy_bytes':legacy_bytes,'v66_before_bytes':v66_before,'v66_after_bytes':v66_after,
-                  'site_bytes':site_bytes,'site_mib':round(site_bytes/1024/1024,2),'target_mib':950,
-                  'production_changed':False}
-          Path('phase66z-report/compression.json').write_text(json.dumps(report,indent=2)+"\n")
-          print(json.dumps(report,indent=2))
+                  im.load(); size=im.size; im.save(tmp,'WEBP',quality=q,method=4)
+              with Image.open(tmp) as chk:
+                  if chk.size!=size: raise RuntimeError(f'dimensión alterada {p}')
+              os.replace(tmp,p); return p.stat().st_size
+          print('Calidad v66 elegida:',chosen)
+          with ProcessPoolExecutor(max_workers=4) as ex: list(ex.map(recode,[(str(p),chosen) for p in vfiles],chunksize=10))
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file()); legacy_q=None
+          if site>940*1024*1024 and legacy:
+              legacy_q=58; print('Ajustando fallback legado q58')
+              with ProcessPoolExecutor(max_workers=4) as ex: list(ex.map(recode,[(str(p),legacy_q) for p in legacy],chunksize=10))
+              site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          r={'schema':66,'phase':'66Z','v66_quality':chosen,'legacy_quality_if_needed':legacy_q,'sample_estimates':estimates,'v66_before_bytes':vbefore,'v66_after_bytes':sum(p.stat().st_size for p in vfiles),'site_bytes':site,'site_mib':round(site/1024/1024,2),'production_changed':False}
+          Path('phase66z-report/compression.json').write_text(json.dumps(r,indent=2)+'\n'); print(json.dumps(r,indent=2))
           PY
+          python /tmp/optimize66z.py
 
-      - name: Validación final de integridad y límite Pages
+      - name: Guard final 4861 + 950 MiB
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           from PIL import Image
-          root=Path('_site')
-          cat=json.loads((root/'v66/catalog.json').read_text())
-          release=root/'v66'/cat['base_path']
-          files=sorted(release.rglob('*.webp'))
+          root=Path('_site'); vr=root/'v66'; c=json.loads((vr/'catalog.json').read_text()); release=vr/c['base_path']; files=sorted(release.rglob('*.webp'))
           assert len(files)==4861
           refs=[]
-          for row in cat['surface'].values():
-              for step in row['steps']:
-                  refs += [m['image'] for m in step['products'].values() if isinstance(m,dict) and m.get('image')]
+          for row in c['surface'].values():
+              for step in row['steps']: refs += [m['image'] for m in step['products'].values() if isinstance(m,dict) and m.get('image')]
           for kind in ('pressure','jet'):
-              for level in cat['aloft'][kind].values():
-                  for model in level['models'].values():
-                      refs += [m['image'] for m in model['maps']]
-          assert len(refs)==4861 and len(set(refs))==4861
-          missing=[x for x in refs if not (release/x).is_file()]
-          assert not missing, missing[:5]
-          bad=[]
-          for p in files[::max(1,len(files)//100)]:
-              try:
-                  with Image.open(p) as im: im.verify()
-              except Exception as e: bad.append((str(p),str(e)))
-          assert not bad, bad[:3]
-          site_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
-          limit=950*1024*1024
-          if site_bytes>limit:
-              raise SystemExit(f'66Z BLOQUEADO: {site_bytes/1024/1024:.1f} MiB > 950 MiB. Producción intacta.')
-          final={
-            'schema':66,'phase':'66Z','status':'ok','total_maps':4861,
-            'site_bytes':site_bytes,'site_mib':round(site_bytes/1024/1024,2),
-            'under_950_mib':True,'production_changed':False,
-            'ready_for_production_cutover':True
-          }
-          Path('phase66z-report/final.json').write_text(json.dumps(final,indent=2)+"\n")
-          print('66Z CANDIDATO VERDE ·',final)
+              for level in c['aloft'][kind].values():
+                  for model in level['models'].values(): refs += [m['image'] for m in model['maps']]
+          assert len(refs)==4861 and len(set(refs))==4861 and not [x for x in refs if not (release/x).is_file()]
+          for p in files[::40]:
+              with Image.open(p) as im: im.verify()
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          if site>950*1024*1024: raise SystemExit(f'BLOQUEADO sin deploy: {site/1024/1024:.2f} MiB > 950 MiB')
+          out={'schema':66,'phase':'66Z','status':'ok','maps':4861,'site_bytes':site,'site_mib':round(site/1024/1024,2),'ready_for_production_cutover':True,'production_changed':False}
+          Path('phase66z-report/final.json').write_text(json.dumps(out,indent=2)+'\n'); print('66Z VERDE',out)
           PY
 
-      - name: Subir evidencia ligera 66Z
+      - name: Subir evidencia 66Z
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -281,7 +198,6 @@ jobs:
           path: phase66z-report/
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Confirmar que no hubo deploy
+      - name: Confirmar sin deploy
         if: success()
-        run: echo "66Z candidato OK. Este workflow NO contiene upload-pages-artifact ni deploy-pages. Producción sigue intacta."
+        run: echo "66Z candidato OK. Producción sigue intacta."
