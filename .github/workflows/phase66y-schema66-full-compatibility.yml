@@ -7,6 +7,7 @@ on:
       - phase66y-schema66-full-compatibility
     paths:
       - ".github/workflows/phase66y-schema66-full-compatibility.yml"
+      - "scripts/phase66x_build_catalog.py"
       - "scripts/phase66y_generate_extra.py"
       - "scripts/phase66y_merge_extras.py"
       - "scripts/smoke_phase66y_pages.py"
