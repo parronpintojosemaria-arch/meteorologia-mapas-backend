@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/phase66x-schema66-pages-candidate.yml"
       - "scripts/phase66x_prepare_pages_candidate.py"
+      - "scripts/phase66x_build_catalog.py"
       - "scripts/smoke_phase66x_pages.py"
 
 permissions:
@@ -47,6 +48,11 @@ jobs:
           PHASE66X_SITE_DIR: _site
         run: python scripts/phase66x_prepare_pages_candidate.py
 
+      - name: Construir catálogo único para WordPress
+        env:
+          PHASE66X_SITE_DIR: _site
+        run: python scripts/phase66x_build_catalog.py
+
       - name: Validar contrato estático schema 66
         run: |
           python - <<'PY'
@@ -56,16 +62,22 @@ jobs:
           latest=json.loads((root/'latest.json').read_text(encoding='utf-8'))
           health=json.loads((root/'health.json').read_text(encoding='utf-8'))
           report=json.loads((root/'report-phase66x.json').read_text(encoding='utf-8'))
+          catalog=json.loads((root/'catalog.json').read_text(encoding='utf-8'))
           assert latest['schema']==66 and latest['phase']=='66X' and latest['status']=='staged'
           assert latest['production_changed'] is False and latest['total_maps']==4695
           assert health['status']=='ok' and health['surface_maps']==1625 and health['aloft_maps']==3070 and health['total_maps']==4695
           assert health['production_changed'] is False
           assert report['schema']==66 and report['phase']=='66X' and report['source_phase']=='66W' and report['production_changed'] is False
+          assert catalog['schema']==66 and catalog['phase']=='66X' and catalog['status']=='ok'
+          assert catalog['summary']['surface_maps']==1625 and catalog['summary']['aloft_maps']==3070 and catalog['summary']['total_maps']==4695
+          assert sorted(map(int,catalog['aloft']['pressure'].keys()))==[200,250,300,500,700,850,925]
+          assert sorted(map(int,catalog['aloft']['jet'].keys()))==[200,250,300]
+          assert catalog['production_changed'] is False
           rel=root/latest['base_path']
           assert rel.is_dir()
           assert len(list(rel.rglob('*.webp')))==4695
           assert (rel/'surface/index.html').is_file() and (rel/'aloft/index.html').is_file()
-          print('66X contrato estático OK · schema66 · 4695 mapas · puntero staged · sin producción')
+          print('66X contrato estático OK · schema66 · catálogo 4695 referencias · puntero staged · sin producción')
           PY
 
       - name: Instalar Chromium para smoke de integración
@@ -93,10 +105,12 @@ jobs:
           root=Path('_site/v66')
           h=json.loads((root/'health.json').read_text(encoding='utf-8'))
           b=json.loads((root/'browser-smoke-phase66x.json').read_text(encoding='utf-8'))
+          c=json.loads((root/'catalog.json').read_text(encoding='utf-8'))
           assert h['status']=='ok' and h['total_maps']==4695 and h['production_changed'] is False
           assert b['status']=='ok' and b['schema']==66 and b['surface_browser_checks']==3 and b['aloft_browser_checks']==10
           assert b['production_changed'] is False
-          print('66X FINAL OK · schema66 · 4695 mapas · integración navegador OK · sin producción')
+          assert c['status']=='ok' and c['summary']['total_maps']==4695 and c['production_changed'] is False
+          print('66X FINAL OK · schema66 · catálogo WordPress · 4695 mapas · navegador OK · sin producción')
           PY
 
       - name: Subir candidato Pages 66X
