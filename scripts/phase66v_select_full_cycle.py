@@ -23,6 +23,15 @@ import gfs_temperature_phase20 as g20  # noqa: E402
 import gfs_surface_phase21 as g21  # noqa: E402
 import gfs_precip_snow_phase23 as g23  # noqa: E402
 import icon_eu_operational_selector_phase55 as i55  # noqa: E402
+from phase66w_surface_domain import (  # noqa: E402
+    GLOBAL_REQUESTED_BOUNDS,
+    apply_global_surface_domain,
+    assert_global_bounds,
+)
+
+# Solo 66W amplía la superficie global. Los motores históricos permanecen
+# intactos y este adaptador cambia únicamente la ventana espacial de la prueba.
+apply_global_surface_domain(es, g20, g21, g23)
 
 OUT = ROOT / "candidate-phase66v-selector" / MODEL
 OUT.mkdir(parents=True, exist_ok=True)
@@ -45,6 +54,7 @@ SURFACE_CONTRACT = {
             "precipitation_total", "snowfall_water_equivalent",
         ],
         "snow_semantics": "ECMWF sf · acumulación equivalente en agua",
+        "requested_bounds": GLOBAL_REQUESTED_BOUNDS,
     },
     "gfs": {
         "source_fields": ["TMP_2m", "UGRD_10m", "VGRD_10m", "TCDC", "APCP", "SNOD"],
@@ -53,6 +63,7 @@ SURFACE_CONTRACT = {
             "precipitation_total", "snow_depth",
         ],
         "snow_semantics": "GFS SNOD · espesor de nieve; no se etiqueta como equivalente en agua",
+        "requested_bounds": GLOBAL_REQUESTED_BOUNDS,
     },
     "icon": {
         "source_fields": [x[0] for x in i55.SURFACE_FIELDS],
@@ -61,6 +72,7 @@ SURFACE_CONTRACT = {
             "precipitation_total", "rain_accumulation", "snowfall_water_equivalent",
         ],
         "snow_semantics": "ICON-EU SNOW_GSP + SNOW_CON · equivalente en agua",
+        "requested_bounds": "dominio regional ICON-EU",
     },
 }
 
@@ -83,6 +95,7 @@ def _probe_ecmwf_surface(run_dt):
         target = es.RAW / f"p66v_ecmwf_{param}_{run_dt:%Y%m%d%H}_f{HORIZON:03d}.grib2"
         source, _ = es.retrieve_param(param, HORIZON, target, run_dt)
         values, units, bounds = es.read_field(target)
+        assert_global_bounds(bounds, f"ECMWF {param} +{HORIZON} h")
         rows[param] = {
             "range": _finite(values, f"ECMWF {param}"),
             "units": units,
@@ -97,12 +110,14 @@ def _probe_ecmwf_surface(run_dt):
 def _probe_gfs_surface(run_dt):
     rows = {}
     t, tu, tb, turls = g20.retrieve_temperature(run_dt, HORIZON)
+    assert_global_bounds(tb, f"GFS TMP 2m +{HORIZON} h")
     rows["TMP_2m"] = {"range": _finite(t, "GFS TMP 2m"), "units": tu, "bounds": tb, "source": turls}
 
     for name, var in (("UGRD_10m", "var_UGRD"), ("VGRD_10m", "var_VGRD")):
         v, vu, vb, urls = g21.retrieve_field(
             run_dt, HORIZON, "lev_10_m_above_ground", var, f"p66v_{name.lower()}"
         )
+        assert_global_bounds(vb, f"GFS {name} +{HORIZON} h")
         rows[name] = {"range": _finite(v, f"GFS {name}"), "units": vu, "bounds": vb, "source": urls}
     if not _same_bounds(rows["UGRD_10m"]["bounds"], rows["VGRD_10m"]["bounds"]):
         raise RuntimeError("GFS superficie: mallas U/V 10 m incompatibles")
@@ -111,14 +126,17 @@ def _probe_gfs_surface(run_dt):
         run_dt, HORIZON, "lev_entire_atmosphere", "var_TCDC", "p66v_tcdc",
         filter_by_keys={"stepType": "instant"},
     )
+    assert_global_bounds(cb, f"GFS TCDC +{HORIZON} h")
     rows["TCDC"] = {"range": _finite(c, "GFS TCDC"), "units": cu, "bounds": cb, "source": curls}
 
     p, pu, pb, purls, pmeta = g23.retrieve_precip(run_dt, HORIZON)
+    assert_global_bounds(pb, f"GFS APCP +{HORIZON} h")
     rows["APCP"] = {
         "range": _finite(p, "GFS APCP"), "units": pu, "bounds": pb,
         "source": purls, "metadata": pmeta,
     }
     s, su, sb, surls = g23.retrieve_snow_depth(run_dt, HORIZON)
+    assert_global_bounds(sb, f"GFS SNOD +{HORIZON} h")
     rows["SNOD"] = {"range": _finite(s, "GFS SNOD"), "units": su, "bounds": sb, "source": surls}
     return rows
 
@@ -150,6 +168,11 @@ def main():
             print(f"66V {MODEL}: probando {run_dt.isoformat()} · superficie + atmósfera hasta +{HORIZON} h", flush=True)
             surface = _probe_surface(run_dt)
             print(f"  superficie OK · {len(surface)} campos fuente", flush=True)
+            if MODEL in {"ecmwf", "gfs"}:
+                print(
+                    "  dominio superficie amplio OK · 45°O…45°E · 20°N…67°N",
+                    flush=True,
+                )
             for level in PRESSURE_LEVELS:
                 u._probe_pressure(run_dt, level)
                 print(f"  presión {level} hPa OK", flush=True)
@@ -176,7 +199,7 @@ def main():
                 "cycle_scope": "un mismo run_utc dentro del modelo para superficie, niveles y Jet",
                 "cross_model_cycle_requirement": False,
                 "surface_semantics_normalized_across_models": False,
-                "surface_semantics_note": "66V valida disponibilidad real. La normalización semántica de nieve/lluvia entre modelos se resolverá antes del despliegue.",
+                "surface_semantics_note": "La nieve conserva su significado físico propio por modelo; no se crea un alias engañoso común.",
                 "attempts_before_success": attempts,
                 "selected_at_utc": datetime.now(timezone.utc).isoformat(),
                 "probe_duration_seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 2),
