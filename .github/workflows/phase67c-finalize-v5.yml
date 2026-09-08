@@ -32,6 +32,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Instalar dependencia de imágenes
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pillow
+          python - <<'PY'
+          from PIL import Image
+          print('Pillow OK', Image.__version__ if hasattr(Image,'__version__') else 'installed')
+          PY
+
       - name: Descargar los 36 artefactos 67C v3 ya validados
         uses: actions/download-artifact@v4
         with:
