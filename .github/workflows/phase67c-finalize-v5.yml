@@ -1,0 +1,265 @@
+name: Fase 67C v5 · Cierre completo 4861 · preservar producción actual
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase67c-wide-production]
+    paths:
+      - ".github/workflows/phase67c-finalize-v5.yml"
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: phase67c-finalize-v5
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    name: 67C v5 · validar 4695 + integrar 4861 + publicar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    environment:
+      name: schema66-production
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Descargar los 36 artefactos 67C v3 ya validados
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "fase67c-v3-*"
+          path: _down
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 34233511876
+
+      - name: Reconstruir superficie y las 10 capas completas
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf phase66w-down candidate-phase66w-surface experimental-phase66u candidate-phase66w
+          mkdir -p phase66w-down candidate-phase66w-surface experimental-phase66u/layers
+
+          for m in ecmwf gfs icon; do
+            mkdir -p "phase66w-down/fase66w-surface-$m" "candidate-phase66w-surface/$m"
+            cp -a "_down/fase67c-v3-surface-$m/." "phase66w-down/fase66w-surface-$m/"
+            cp -a "_down/fase67c-v3-surface-$m/." "candidate-phase66w-surface/$m/"
+          done
+
+          for slug in 500hpa 850hpa 700hpa 925hpa 300hpa 250hpa 200hpa jet300 jet250 jet200; do
+            case "$slug" in
+              500hpa) INPUT=phase66j-input; OUTPUT=experimental-phase66j; BUILDER=build_phase66j_maplibre_viewer.py;;
+              850hpa) INPUT=phase66k-input; OUTPUT=experimental-phase66k; BUILDER=build_phase66k_maplibre_viewer.py;;
+              700hpa) INPUT=phase66l-input; OUTPUT=experimental-phase66l; BUILDER=build_phase66l_maplibre_viewer.py;;
+              925hpa) INPUT=phase66m-input; OUTPUT=experimental-phase66m; BUILDER=build_phase66m_maplibre_viewer.py;;
+              300hpa) INPUT=phase66n-input; OUTPUT=experimental-phase66n; BUILDER=build_phase66n_maplibre_viewer.py;;
+              250hpa) INPUT=phase66o-input; OUTPUT=experimental-phase66o; BUILDER=build_phase66o_maplibre_viewer.py;;
+              200hpa) INPUT=phase66p-input; OUTPUT=experimental-phase66p; BUILDER=build_phase66p_maplibre_viewer.py;;
+              jet300) INPUT=phase66q-input; OUTPUT=experimental-phase66q; BUILDER=build_phase66q_maplibre_viewer.py;;
+              jet250) INPUT=phase66r-input; OUTPUT=experimental-phase66r; BUILDER=build_phase66r_maplibre_viewer.py;;
+              jet200) INPUT=phase66s-input; OUTPUT=experimental-phase66s; BUILDER=build_phase66s_maplibre_viewer.py;;
+            esac
+            rm -rf "$INPUT" "$OUTPUT"
+            mkdir -p "$INPUT"
+            for m in ecmwf gfs icon; do
+              mkdir -p "$INPUT/$m"
+              cp -a "_down/fase67c-v3-$slug-$m/." "$INPUT/$m/"
+            done
+            python "scripts/$BUILDER"
+            rm -rf "experimental-phase66u/layers/$slug"
+            mkdir -p "experimental-phase66u/layers/$slug"
+            cp -a "$OUTPUT/." "experimental-phase66u/layers/$slug/"
+          done
+          python scripts/build_phase66u_master_viewer.py
+
+      - name: Construir y validar núcleo 4695
+        env:
+          ECMWF_RUN: 2026-09-08T00:00:00+00:00
+          GFS_RUN: 2026-09-08T06:00:00+00:00
+          ICON_RUN: 2026-09-08T06:00:00+00:00
+        run: |
+          python scripts/build_phase66w_release.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('candidate-phase66w/report-phase66w.json').read_text())
+          assert r['status']=='ok' and r['schema']==66 and r['phase']=='66W'
+          assert r['surface_maps']==1625 and r['aloft']['maps']==3070 and r['total_maps']==4695
+          release=Path('candidate-phase66w/releases')/r['release_id']
+          assert release.is_dir()
+          assert len(list(release.rglob('*.webp')))==4695
+          print('67C v5 núcleo 4695 OK',r['release_id'])
+          PY
+
+      - name: Descargar producción pública actual no caducada
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _pages
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 34255525883
+
+      - name: Preservar producción actual y sustituir solo v66
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site _extras
+          mkdir -p _site
+          TAR="$(find _pages -type f -name artifact.tar | head -n1)"
+          test -n "$TAR"
+          tar -xf "$TAR" -C _site
+          test -d _site/ecmwf
+          test -d _site/gfs
+          test -d _site/icon-eu
+          rm -rf _site/v66
+
+          python - <<'PY'
+          import json, shutil
+          from datetime import datetime, timezone
+          from pathlib import Path
+          src=Path('candidate-phase66w')
+          site=Path('_site')
+          report=json.loads((src/'report-phase66w.json').read_text())
+          assert report['schema']==66 and report['phase']=='66W' and report['status']=='ok'
+          assert report['total_maps']==4695
+          release_id=report['release_id']
+          source_release=src/'releases'/release_id
+          assert source_release.is_dir() and len(list(source_release.rglob('*.webp')))==4695
+          v66=site/'v66'; target=v66/'releases'/release_id
+          target.parent.mkdir(parents=True,exist_ok=True)
+          shutil.copytree(source_release,target)
+          now=datetime.now(timezone.utc).isoformat()
+          latest={
+            'schema':66,'phase':'67C','status':'staged','release_id':release_id,
+            'base_path':f'releases/{release_id}','surface_path':f'releases/{release_id}/surface',
+            'aloft_path':f'releases/{release_id}/aloft','selected_cycles':report['selected_cycles'],
+            'surface':report['surface'],'aloft':report['aloft'],'surface_maps':1625,
+            'aloft_maps':3070,'total_maps':4695,'production_changed':False,
+            'source_phase':'67C','created_at_utc':now
+          }
+          health={
+            'schema':66,'phase':'67C','status':'ok','release_id':release_id,
+            'surface_maps':1625,'aloft_maps':3070,'total_maps':4695,
+            'production_changed':False,'checked_at_utc':now
+          }
+          v66.mkdir(parents=True,exist_ok=True)
+          (v66/'latest.json').write_text(json.dumps(latest,ensure_ascii=False,indent=2)+'\n')
+          (v66/'health.json').write_text(json.dumps(health,ensure_ascii=False,indent=2)+'\n')
+          (v66/'report-phase67c-core.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          (site/'.nojekyll').write_text('')
+          print('67C v5 base v66 dinámica OK',release_id)
+          PY
+
+          PHASE66X_SITE_DIR=_site python scripts/phase66x_build_catalog.py
+
+          mkdir -p _extras/ecmwf _extras/gfs _extras/icon
+          cp -a _down/fase67c-v3-extra-ecmwf/. _extras/ecmwf/
+          cp -a _down/fase67c-v3-extra-gfs/. _extras/gfs/
+          cp -a _down/fase67c-v3-extra-icon/. _extras/icon/
+          PHASE66Y_SITE_DIR=_site PHASE66Y_EXTRA_DIR=_extras python scripts/phase66y_merge_extras.py
+
+      - name: Validar 4861 mapas, compatibilidad y dominio amplio
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66')
+          c=json.loads((root/'catalog.json').read_text())
+          release=root/c['base_path']
+          assert c['schema']==66 and c['status']=='ok'
+          assert c['summary']['total_maps']==4861
+          assert c['compatibility']['ready_for_plugin_cutover'] is True
+          assert len(list(release.rglob('*.webp')))==4861
+          for m in ('ecmwf','gfs'):
+              found=False
+              for step in c['surface'][m]['steps']:
+                  for rec in step['products'].values():
+                      if isinstance(rec,dict) and rec.get('bounds'):
+                          b=rec['bounds']
+                          assert b['west']<-105 and b['east']>45 and b['north']>76 and b['south']<20,b
+                          found=True; break
+                  if found: break
+              assert found
+              for kind,levels in (('pressure',['925','850','700','500','300','250','200']),('jet',['300','250','200'])):
+                  for lev in levels:
+                      row=c['aloft'][kind][lev]['models'][m]['maps'][0]
+                      b=row['bounds']
+                      assert b['west']<-105 and b['east']>45 and b['north']>76 and b['south']<20,(kind,lev,m,b)
+          for p in ('ecmwf','gfs','icon-eu'):
+              assert (Path('_site')/p).is_dir(),p
+          print('67C v5 schema66 4861 OK · producción anterior preservada · dominio amplio OK')
+          PY
+
+      - name: Comprimir nuevo v66 para GitHub Pages
+        run: |
+          python - <<'PY'
+          import json,os
+          from concurrent.futures import ProcessPoolExecutor
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site')
+          c=json.loads((root/'v66/catalog.json').read_text())
+          release=root/'v66'/c['base_path']
+          files=sorted(release.rglob('*.webp'))
+          assert len(files)==4861
+          def recode(arg):
+              path,q=arg
+              p=Path(path); tmp=p.with_suffix('.tmp.webp')
+              with Image.open(p) as im:
+                  im.load(); size=im.size; im.save(tmp,'WEBP',quality=q,method=4)
+              with Image.open(tmp) as chk: assert chk.size==size
+              os.replace(tmp,p)
+          q=48
+          with ProcessPoolExecutor(max_workers=4) as ex:
+              list(ex.map(recode,[(str(p),q) for p in files],chunksize=8))
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          if site>940*1024*1024:
+              q=38
+              with ProcessPoolExecutor(max_workers=4) as ex:
+                  list(ex.map(recode,[(str(p),q) for p in files],chunksize=8))
+              site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          assert site<=950*1024*1024,f'{site/1024/1024:.1f} MiB > 950 MiB'
+          (root/'v66/phase67c.json').write_text(json.dumps({
+              'schema':67,'phase':'67C','status':'ok','maps':4861,
+              'global_bounds':[-105,20,45,76],'quality':q,
+              'site_mib':round(site/1024/1024,2),'legacy_root_preserved':True
+          },indent=2)+'\n')
+          print('67C v5',round(site/1024/1024,2),'MiB q',q)
+          PY
+
+      - name: Guard final antes de publicar
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site/v66')
+          c=json.loads((root/'catalog.json').read_text())
+          files=sorted((root/c['base_path']).rglob('*.webp'))
+          assert len(files)==4861 and (root/'phase67c.json').is_file()
+          for p in files[::40]:
+              with Image.open(p) as im: im.verify()
+          for p in ('ecmwf','gfs','icon-eu'):
+              assert (Path('_site')/p).is_dir()
+          print('67C v5 FINAL PREDEPLOY OK · 4861')
+          PY
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+          retention-days: 1
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
