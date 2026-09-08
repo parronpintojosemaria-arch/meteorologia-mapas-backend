@@ -1,0 +1,76 @@
+name: Fase 67A · Mapa sinóptico visual amplio
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase67a-meteored-visual-test
+    paths:
+      - ".github/workflows/phase67a-meteored-visual-test.yml"
+      - "scripts/phase67a_meteored_visual_test.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase67a-meteored-visual-test
+  cancel-in-progress: true
+
+jobs:
+  render:
+    name: 67A · ${{ matrix.model }} · 500 hPa visual
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [ecmwf, gfs]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias
+        run: pip install -r requirements.txt
+
+      - name: Generar prueba visual
+        run: python scripts/phase67a_meteored_visual_test.py "${{ matrix.model }}"
+
+      - name: Validar artefacto
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          import os
+          model=os.environ['MODEL']
+          root=Path('experimental-phase67a')/model
+          m=json.loads((root/'manifest-phase67a.json').read_text())
+          assert m['schema']==67 and m['phase']=='67A' and m['status']=='ok'
+          assert m['production_changed'] is False
+          assert m['domain']=={'west':-105.0,'east':45.0,'south':20.0,'north':76.0}
+          assert len(m['maps'])==3
+          for row in m['maps']:
+              p=root/row['image']
+              assert p.is_file() and p.stat().st_size>10000
+              with Image.open(p) as im:
+                  im.verify()
+              with Image.open(p) as im:
+                  assert im.width>=1400 and im.height>=500
+          assert (root/'index.html').is_file()
+          print('67A VALIDADO',model,'3 mapas','dominio 105O..45E','sin producción')
+          PY
+        env:
+          MODEL: ${{ matrix.model }}
+
+      - name: Subir prueba visual
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase67a-${{ matrix.model }}-500hpa-visual
+          path: experimental-phase67a/${{ matrix.model }}/
+          if-no-files-found: error
+          retention-days: 30
