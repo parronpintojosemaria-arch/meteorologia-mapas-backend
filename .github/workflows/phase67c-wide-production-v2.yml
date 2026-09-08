@@ -1,0 +1,306 @@
+name: Fase 67C v2 · Mapa amplio completo · producción
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase67c-wide-production]
+    paths:
+      - ".github/workflows/phase67c-wide-production-v2.yml"
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: phase67c-wide-production
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: 67C · seleccionar ciclos completos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    outputs:
+      ecmwf_run: ${{ steps.cycles.outputs.ecmwf_run }}
+      gfs_run: ${{ steps.cycles.outputs.gfs_run }}
+      icon_run: ${{ steps.cycles.outputs.icon_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m py_compile scripts/phase67c_common.py scripts/phase67c_run_layer.py scripts/phase67c_surface_run.py scripts/phase67c_extra_run.py
+      - id: cycles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/phase66v_select_full_cycle.py ecmwf | tee /tmp/e.log; E="$(tail -n 1 /tmp/e.log)"
+          python scripts/phase66v_select_full_cycle.py gfs | tee /tmp/g.log; G="$(tail -n 1 /tmp/g.log)"
+          python scripts/phase66v_select_full_cycle.py icon | tee /tmp/i.log; I="$(tail -n 1 /tmp/i.log)"
+          echo "ecmwf_run=$E" >> "$GITHUB_OUTPUT"; echo "gfs_run=$G" >> "$GITHUB_OUTPUT"; echo "icon_run=$I" >> "$GITHUB_OUTPUT"
+          printf 'ECMWF %s\nGFS %s\nICON %s\n' "$E" "$G" "$I"
+
+  surface:
+    name: 67C · superficie · ${{ matrix.model }}
+    needs: select
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: {model: [ecmwf, gfs, icon]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - shell: bash
+        run: |
+          case "${{ matrix.model }}" in ecmwf) RUN="${{ needs.select.outputs.ecmwf_run }}";; gfs) RUN="${{ needs.select.outputs.gfs_run }}";; icon) RUN="${{ needs.select.outputs.icon_run }}";; esac
+          python scripts/phase67c_surface_run.py "${{ matrix.model }}" "$RUN"
+      - name: Validar superficie
+        env: {MODEL: "${{ matrix.model }}"}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=os.environ['MODEL']; base=Path('candidate-phase66w-surface')/m; d=json.loads((base/'manifest-phase66w-surface.json').read_text())
+          expected={'ecmwf':423,'gfs':644,'icon':558}[m]; horizon={'ecmwf':360,'gfs':384,'icon':120}[m]
+          assert d['status']=='ok' and d['horizon_hours']==horizon and d['summary']['map_files']==expected
+          if m in ('ecmwf','gfs'):
+              ok=False
+              for step in d['surface'].values():
+                  for rec in step.values():
+                      if isinstance(rec,dict) and rec.get('status')=='ok' and rec.get('bounds'):
+                          b=rec['bounds']; assert b['west']<-105 and b['east']>45 and b['north']>76 and b['south']<20,b; ok=True; break
+                  if ok: break
+              assert ok
+          print('67C superficie OK',m,expected)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase67c-surface-${{ matrix.model }}
+          path: candidate-phase66w-surface/${{ matrix.model }}/
+          retention-days: 7
+          compression-level: 0
+
+  aloft:
+    name: 67C · ${{ matrix.slug }} · ${{ matrix.model }}
+    needs: select
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [ecmwf, gfs, icon]
+        slug: [500hpa, 850hpa, 700hpa, 925hpa, 300hpa, 250hpa, 200hpa, jet300, jet250, jet200]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Resolver capa
+        shell: bash
+        run: |
+          case "${{ matrix.slug }}" in
+            500hpa) INPUT=phase66j-input; OUTPUT=experimental-phase66j; BUILDER=build_phase66j_maplibre_viewer.py; PHASELC=66j;;
+            850hpa) INPUT=phase66k-input; OUTPUT=experimental-phase66k; BUILDER=build_phase66k_maplibre_viewer.py; PHASELC=66k;;
+            700hpa) INPUT=phase66l-input; OUTPUT=experimental-phase66l; BUILDER=build_phase66l_maplibre_viewer.py; PHASELC=66l;;
+            925hpa) INPUT=phase66m-input; OUTPUT=experimental-phase66m; BUILDER=build_phase66m_maplibre_viewer.py; PHASELC=66m;;
+            300hpa) INPUT=phase66n-input; OUTPUT=experimental-phase66n; BUILDER=build_phase66n_maplibre_viewer.py; PHASELC=66n;;
+            250hpa) INPUT=phase66o-input; OUTPUT=experimental-phase66o; BUILDER=build_phase66o_maplibre_viewer.py; PHASELC=66o;;
+            200hpa) INPUT=phase66p-input; OUTPUT=experimental-phase66p; BUILDER=build_phase66p_maplibre_viewer.py; PHASELC=66p;;
+            jet300) INPUT=phase66q-input; OUTPUT=experimental-phase66q; BUILDER=build_phase66q_maplibre_viewer.py; PHASELC=66q;;
+            jet250) INPUT=phase66r-input; OUTPUT=experimental-phase66r; BUILDER=build_phase66r_maplibre_viewer.py; PHASELC=66r;;
+            jet200) INPUT=phase66s-input; OUTPUT=experimental-phase66s; BUILDER=build_phase66s_maplibre_viewer.py; PHASELC=66s;;
+          esac
+          echo "INPUT=$INPUT" >> "$GITHUB_ENV"; echo "OUTPUT=$OUTPUT" >> "$GITHUB_ENV"; echo "BUILDER=$BUILDER" >> "$GITHUB_ENV"; echo "PHASELC=$PHASELC" >> "$GITHUB_ENV"
+      - name: Generar capa
+        shell: bash
+        run: |
+          case "${{ matrix.model }}" in ecmwf) RUN="${{ needs.select.outputs.ecmwf_run }}";; gfs) RUN="${{ needs.select.outputs.gfs_run }}";; icon) RUN="${{ needs.select.outputs.icon_run }}";; esac
+          python scripts/phase67c_run_layer.py "${{ matrix.slug }}" "${{ matrix.model }}" "$RUN"
+      - name: Validar datos
+        env: {MODEL: "${{ matrix.model }}"}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=os.environ['MODEL']; base=Path(os.environ['INPUT'])/m; d=json.loads((base/f"manifest-phase{os.environ['PHASELC']}.json").read_text())
+          wanted={'ecmwf':(85,360),'gfs':(129,384),'icon':(93,120)}[m]
+          assert d['status']=='ok' and d['summary']=={'successes':wanted[0],'failures':0,'expected':wanted[0]} and d['horizon_hours']==wanted[1]
+          if m in ('ecmwf','gfs'):
+              first=next(x for x in d['maps'].values() if x.get('status')=='ok'); b=first['bounds']; assert b['west']<-105 and b['east']>45 and b['north']>76 and b['south']<20,b
+          print('67C aloft OK',m,d['phase'],wanted)
+          PY
+      - run: python "scripts/$BUILDER"
+      - run: mkdir -p _one && cp -a "$OUTPUT/${{ matrix.model }}/." _one/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase67c-${{ matrix.slug }}-${{ matrix.model }}
+          path: _one/
+          retention-days: 7
+          compression-level: 0
+
+  extras:
+    name: 67C · extras · ${{ matrix.model }}
+    needs: select
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: {model: [ecmwf, gfs, icon]}
+    env:
+      ECMWF_RUN_UTC: ${{ needs.select.outputs.ecmwf_run }}
+      GFS_RUN_UTC: ${{ needs.select.outputs.gfs_run }}
+      ICON_RUN_UTC: ${{ needs.select.outputs.icon_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - run: python scripts/phase67c_extra_run.py "${{ matrix.model }}"
+      - name: Validar extras
+        env: {MODEL: "${{ matrix.model }}"}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=os.environ['MODEL']; base=Path('phase66y-extra')/m; d=json.loads((base/'manifest-phase66y-extra.json').read_text()); wanted={'ecmwf':36,'gfs':38,'icon':92}[m]
+          assert d['status']=='ok' and d['summary']['maps']==wanted
+          if m in ('ecmwf','gfs'):
+              rec=None
+              for step in d['steps'].values():
+                  rec=next((x for x in step.values() if x.get('bounds')),None)
+                  if rec: break
+              b=rec['bounds']; assert b['west']<-105 and b['east']>45 and b['north']>76 and b['south']<20,b
+          print('67C extras OK',m,wanted)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase67c-extra-${{ matrix.model }}
+          path: phase66y-extra/${{ matrix.model }}/
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    name: 67C · integrar 4861 y publicar
+    needs: [select, surface, aloft, extras]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    environment:
+      name: schema66-production
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/download-artifact@v4
+        with: {pattern: "fase67c-*", path: _down}
+      - name: Reconstruir staging compatible
+        run: |
+          set -euo pipefail
+          mkdir -p candidate-phase66w-surface experimental-phase66u/layers
+          for m in ecmwf gfs icon; do mkdir -p "candidate-phase66w-surface/$m"; cp -a "_down/fase67c-surface-$m/." "candidate-phase66w-surface/$m/"; done
+          for slug in 500hpa 850hpa 700hpa 925hpa 300hpa 250hpa 200hpa jet300 jet250 jet200; do
+            for m in ecmwf gfs icon; do mkdir -p "experimental-phase66u/layers/$slug/$m"; cp -a "_down/fase67c-$slug-$m/." "experimental-phase66u/layers/$slug/$m/"; done
+          done
+          python scripts/build_phase66u_master_viewer.py
+      - name: Construir núcleo 4695
+        env:
+          ECMWF_RUN: ${{ needs.select.outputs.ecmwf_run }}
+          GFS_RUN: ${{ needs.select.outputs.gfs_run }}
+          ICON_RUN: ${{ needs.select.outputs.icon_run }}
+        run: python scripts/build_phase66w_release.py
+      - name: Validar núcleo
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('candidate-phase66w/report-phase66w.json').read_text()); assert r['status']=='ok' and r['surface_maps']==1625 and r['aloft']['maps']==3070 and r['total_maps']==4695
+          print('67C núcleo 4695 OK')
+          PY
+      - name: Descargar base pública estable
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _pages
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33747684669
+      - name: Integrar schema66
+        run: |
+          set -euo pipefail
+          mkdir -p _site; TAR="$(find _pages -type f -name artifact.tar | head -n1)"; test -n "$TAR"; tar -xf "$TAR" -C _site; rm -rf _site/v66 _site/quality
+          PHASE66W_SOURCE_DIR=candidate-phase66w PHASE66X_SITE_DIR=_site python scripts/phase66x_prepare_pages_candidate.py
+          PHASE66X_SITE_DIR=_site python scripts/phase66x_build_catalog.py
+          mkdir -p _extras/ecmwf _extras/gfs _extras/icon
+          cp -a _down/fase67c-extra-ecmwf/. _extras/ecmwf/; cp -a _down/fase67c-extra-gfs/. _extras/gfs/; cp -a _down/fase67c-extra-icon/. _extras/icon/
+          PHASE66Y_SITE_DIR=_site PHASE66Y_EXTRA_DIR=_extras python scripts/phase66y_merge_extras.py
+      - name: Validar 4861
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('_site/v66'); c=json.loads((root/'catalog.json').read_text()); release=root/c['base_path']; assert c['schema']==66 and c['status']=='ok' and c['summary']['total_maps']==4861 and c['compatibility']['ready_for_plugin_cutover'] is True and len(list(release.rglob('*.webp')))==4861
+          for m in ('ecmwf','gfs'):
+              found=False
+              for step in c['surface'][m]['steps']:
+                  for rec in step['products'].values():
+                      if isinstance(rec,dict) and rec.get('bounds'):
+                          b=rec['bounds']; assert b['west']<-105 and b['east']>45 and b['north']>76 and b['south']<20,b; found=True; break
+                  if found: break
+              assert found
+          print('67C schema66 4861 OK · dominio amplio')
+          PY
+      - name: Comprimir para Pages
+        run: |
+          python - <<'PY'
+          import json,os
+          from concurrent.futures import ProcessPoolExecutor
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site'); c=json.loads((root/'v66/catalog.json').read_text()); release=root/'v66'/c['base_path']; files=sorted(release.rglob('*.webp')); assert len(files)==4861
+          def recode(arg):
+              path,q=arg; p=Path(path); tmp=p.with_suffix('.tmp.webp')
+              with Image.open(p) as im: im.load(); size=im.size; im.save(tmp,'WEBP',quality=q,method=4)
+              with Image.open(tmp) as chk: assert chk.size==size
+              os.replace(tmp,p)
+          q=48
+          with ProcessPoolExecutor(max_workers=4) as ex: list(ex.map(recode,[(str(p),q) for p in files],chunksize=8))
+          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          if site>940*1024*1024:
+              q=38
+              with ProcessPoolExecutor(max_workers=4) as ex: list(ex.map(recode,[(str(p),q) for p in files],chunksize=8))
+              site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          assert site<=950*1024*1024,f'{site/1024/1024:.1f} MiB > 950 MiB'
+          (root/'v66/phase67c.json').write_text(json.dumps({'schema':67,'phase':'67C','status':'ok','maps':4861,'global_bounds':[-105,20,45,76],'quality':q,'site_mib':round(site/1024/1024,2)},indent=2)+'\n')
+          print('67C',round(site/1024/1024,2),'MiB q',q)
+          PY
+      - name: Guard final de imágenes
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('_site/v66'); c=json.loads((root/'catalog.json').read_text()); files=sorted((root/c['base_path']).rglob('*.webp')); assert len(files)==4861 and (root/'phase67c.json').is_file()
+          for p in files[::50]:
+              with Image.open(p) as im: im.verify()
+          print('67C FINAL OK · 4861')
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with: {path: _site, retention-days: 1}
+      - id: deployment
+        uses: actions/deploy-pages@v4
