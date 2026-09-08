@@ -1,0 +1,125 @@
+name: Fase 67D · Calidad HD · prueba reversible
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase67d-quality-test]
+    paths:
+      - ".github/workflows/phase67d-quality-test.yml"
+      - "scripts/phase67d_surface_quality_test.py"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase67d-quality-test
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: 67D · seleccionar ciclos oficiales
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    outputs:
+      ecmwf_run: ${{ steps.cycles.outputs.ecmwf_run }}
+      gfs_run: ${{ steps.cycles.outputs.gfs_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - id: cycles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/phase66v_select_full_cycle.py ecmwf | tee /tmp/e.log
+          E="$(tail -n 1 /tmp/e.log)"
+          python scripts/phase66v_select_full_cycle.py gfs | tee /tmp/g.log
+          G="$(tail -n 1 /tmp/g.log)"
+          echo "ecmwf_run=$E" >> "$GITHUB_OUTPUT"
+          echo "gfs_run=$G" >> "$GITHUB_OUTPUT"
+          printf '67D ciclos: ECMWF %s · GFS %s\n' "$E" "$G"
+
+  surface_hd:
+    name: 67D · superficie HD · ${{ matrix.model }}
+    needs: select
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: {model: [ecmwf, gfs]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar solo +0/+24 en alta resolución
+        shell: bash
+        run: |
+          case "${{ matrix.model }}" in
+            ecmwf) RUN="${{ needs.select.outputs.ecmwf_run }}";;
+            gfs) RUN="${{ needs.select.outputs.gfs_run }}";;
+          esac
+          python scripts/phase67d_surface_quality_test.py "${{ matrix.model }}" "$RUN"
+      - name: Validar resolución y viento
+        env: {MODEL: "${{ matrix.model }}"}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=os.environ['MODEL']
+          base=Path('experimental-phase67d-surface')/m
+          r=json.loads((base/'phase67d-quality.json').read_text())
+          assert r['phase']=='67D' and r['status']=='ok' and r['production_changed'] is False
+          assert r['summary']['min_width']>=2000,r['summary']
+          assert (base/'wind_10m'/'f000.webp').is_file()
+          assert (base/'wind_10m'/'f024.webp').is_file()
+          print('67D superficie HD OK',m,r['summary'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase67d-superficie-hd-${{ matrix.model }}
+          path: experimental-phase67d-surface/${{ matrix.model }}/
+          retention-days: 7
+          compression-level: 0
+
+  aloft_reference:
+    name: 67D · referencia nítida 500 hPa · ${{ matrix.model }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: {model: [ecmwf, gfs]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar 500 hPa sin compresión de producción
+        run: python scripts/phase67a_meteored_visual_test.py "${{ matrix.model }}"
+      - name: Validar referencia
+        env: {MODEL: "${{ matrix.model }}"}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=os.environ['MODEL']; base=Path('experimental-phase67a')/m
+          d=json.loads((base/'manifest-phase67a.json').read_text())
+          assert d['status']=='ok' and len(d['maps'])==3
+          for row in d['maps']:
+              assert row['width']>=1700 and row['height']>=1100,row
+          print('67D referencia 500 hPa OK',m)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase67d-500hpa-referencia-${{ matrix.model }}
+          path: experimental-phase67a/${{ matrix.model }}/
+          retention-days: 7
+          compression-level: 0
