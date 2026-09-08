@@ -16,12 +16,12 @@ Estas reglas se aplican a TODA la pestaña Mapa, no solo a 500 hPa.
 
 ## Cartografía visible
 - La capa meteorológica se dibuja por debajo de fronteras administrativas y rótulos principales.
-- Costas, fronteras nacionales y nombres de países deben permanecer claramente visibles sobre el raster meteorológico.
-- **Costas e islas** deben llevar un contorno oscuro continuo por encima del raster meteorológico para distinguir con claridad la Península, Baleares, Canarias cuando entren en el dominio, Reino Unido, Irlanda, Islandia, Sicilia, Cerdeña, Córcega, Creta y demás islas visibles.
-- **Fronteras nacionales** deben utilizar doble lectura: halo claro inferior + trazo oscuro superior, de modo que sigan siendo visibles sobre rojos, amarillos, verdes, azules o violetas.
-- Los rótulos principales deben usar texto claro con halo oscuro para mantener contraste sobre cualquier paleta.
+- Costas, fronteras nacionales, archipiélagos e islas deben permanecer claramente visibles sobre el raster meteorológico.
+- **No depender de las capas de fronteras/costas del estilo del mapa base.** Dibujar una capa vectorial geográfica independiente por encima del raster meteorológico (Natural Earth 1:50m o equivalente validado), con doble trazo: halo claro más ancho + línea oscura más fina.
+- Los nombres principales de países se dibujan también en una capa independiente para evitar que el motor de colisiones del mapa base oculte países importantes. **España debe quedar siempre identificada**.
 - Ocultar carreteras, POI, aldeas y rótulos menores que añadan ruido.
-- Ningún relleno del mapa base puede tapar o deslavar los colores meteorológicos; solo contornos y rótulos se dibujan por encima.
+- Reforzar contraste de nombres con halo para que se distingan sobre cualquier paleta.
+- La capa geográfica nunca puede rellenar ni aclarar el mapa meteorológico: solo contornos y rótulos por encima.
 
 ## Aplicación global
 Estas reglas son comunes a:
