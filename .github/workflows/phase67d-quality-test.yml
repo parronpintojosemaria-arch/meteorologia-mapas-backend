@@ -114,7 +114,8 @@ jobs:
           d=json.loads((base/'manifest-phase67a.json').read_text())
           assert d['status']=='ok' and len(d['maps'])==3
           for row in d['maps']:
-              assert row['width']>=1700 and row['height']>=1100,row
+              size=row['size']
+              assert size['width']>=1700 and size['height']>=1100,size
           print('67D referencia 500 hPa OK',m)
           PY
       - uses: actions/upload-artifact@v4
