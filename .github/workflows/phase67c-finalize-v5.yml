@@ -209,42 +209,8 @@ jobs:
           print('67C v5 schema66 4861 OK · producción anterior preservada · dominio amplio OK')
           PY
 
-      - name: Comprimir nuevo v66 para GitHub Pages
-        run: |
-          python - <<'PY'
-          import json,os
-          from concurrent.futures import ProcessPoolExecutor
-          from pathlib import Path
-          from PIL import Image
-          root=Path('_site')
-          c=json.loads((root/'v66/catalog.json').read_text())
-          release=root/'v66'/c['base_path']
-          files=sorted(release.rglob('*.webp'))
-          assert len(files)==4861
-          def recode(arg):
-              path,q=arg
-              p=Path(path); tmp=p.with_suffix('.tmp.webp')
-              with Image.open(p) as im:
-                  im.load(); size=im.size; im.save(tmp,'WEBP',quality=q,method=4)
-              with Image.open(tmp) as chk: assert chk.size==size
-              os.replace(tmp,p)
-          q=48
-          with ProcessPoolExecutor(max_workers=4) as ex:
-              list(ex.map(recode,[(str(p),q) for p in files],chunksize=8))
-          site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
-          if site>940*1024*1024:
-              q=38
-              with ProcessPoolExecutor(max_workers=4) as ex:
-                  list(ex.map(recode,[(str(p),q) for p in files],chunksize=8))
-              site=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
-          assert site<=950*1024*1024,f'{site/1024/1024:.1f} MiB > 950 MiB'
-          (root/'v66/phase67c.json').write_text(json.dumps({
-              'schema':67,'phase':'67C','status':'ok','maps':4861,
-              'global_bounds':[-105,20,45,76],'quality':q,
-              'site_mib':round(site/1024/1024,2),'legacy_root_preserved':True
-          },indent=2)+'\n')
-          print('67C v5',round(site/1024/1024,2),'MiB q',q)
-          PY
+      - name: Optimizar v66 adaptativamente para GitHub Pages
+        run: python scripts/phase67c_optimize_pages.py
 
       - name: Guard final antes de publicar
         run: |
@@ -255,12 +221,15 @@ jobs:
           root=Path('_site/v66')
           c=json.loads((root/'catalog.json').read_text())
           files=sorted((root/c['base_path']).rglob('*.webp'))
-          assert len(files)==4861 and (root/'phase67c.json').is_file()
+          report=json.loads((root/'phase67c.json').read_text())
+          assert len(files)==4861
+          assert report['status']=='ok' and report['maps']==4861
+          assert report['site_mib']<=940
           for p in files[::40]:
               with Image.open(p) as im: im.verify()
           for p in ('ecmwf','gfs','icon-eu'):
               assert (Path('_site')/p).is_dir()
-          print('67C v5 FINAL PREDEPLOY OK · 4861')
+          print('67C v5 FINAL PREDEPLOY OK · 4861 ·',report['site_mib'],'MiB')
           PY
 
       - uses: actions/configure-pages@v5
