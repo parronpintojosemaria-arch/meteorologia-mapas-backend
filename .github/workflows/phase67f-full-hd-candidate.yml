@@ -1,4 +1,4 @@
-name: Fase 67F · Candidato Schema66 HD completo · sin publicar
+name: Fase 67F2 · Candidato Schema66 HD directo · sin publicar
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   candidate:
-    name: 67F · reconstruir 4.861 mapas HD y medir Pages
+    name: 67F2 · reconstruir 4.861 mapas HD y medir Pages
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -96,7 +96,7 @@ jobs:
           release=Path('candidate-phase66w/releases')/r['release_id']
           assert release.is_dir()
           assert len(list(release.rglob('*.webp')))==4695
-          print('67F núcleo 4695 OK',r['release_id'])
+          print('67F2 núcleo 4695 OK',r['release_id'])
           PY
 
       - name: Montar sitio candidato v66 y añadir los 166 extras
@@ -119,21 +119,21 @@ jobs:
           shutil.copytree(source_release,target)
           now=datetime.now(timezone.utc).isoformat()
           latest={
-            'schema':66,'phase':'67F','status':'staged','release_id':release_id,
+            'schema':66,'phase':'67F2','status':'staged','release_id':release_id,
             'base_path':f'releases/{release_id}','surface_path':f'releases/{release_id}/surface',
             'aloft_path':f'releases/{release_id}/aloft','selected_cycles':report['selected_cycles'],
             'surface':report['surface'],'aloft':report['aloft'],'surface_maps':1625,
             'aloft_maps':3070,'total_maps':4695,'production_changed':False,
-            'source_phase':'67F','created_at_utc':now
+            'source_phase':'67F2','created_at_utc':now
           }
           health={
-            'schema':66,'phase':'67F','status':'ok','release_id':release_id,
+            'schema':66,'phase':'67F2','status':'ok','release_id':release_id,
             'surface_maps':1625,'aloft_maps':3070,'total_maps':4695,
             'production_changed':False,'checked_at_utc':now
           }
           (v66/'latest.json').write_text(json.dumps(latest,ensure_ascii=False,indent=2)+'\n')
           (v66/'health.json').write_text(json.dumps(health,ensure_ascii=False,indent=2)+'\n')
-          (v66/'report-phase67f-core.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          (v66/'report-phase67f2-core.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
           (site/'.nojekyll').write_text('')
           PY
 
@@ -156,10 +156,10 @@ jobs:
           assert c['summary']['total_maps']==4861
           assert c['compatibility']['ready_for_plugin_cutover'] is True
           assert len(list(release.rglob('*.webp')))==4861
-          print('67F Schema66 completo OK · 4861 mapas')
+          print('67F2 Schema66 completo OK · 4861 mapas')
           PY
 
-      - name: Optimizar a HD 1600 q78 sin legado duplicado
+      - name: Optimizar directo a HD con margen para Pages
         run: |
           python - <<'PY'
           from concurrent.futures import ProcessPoolExecutor
@@ -189,15 +189,15 @@ jobs:
               with Image.open(tmp) as chk: chk.verify()
               os.replace(tmp,p)
 
-          profiles=[(1600,78),(1500,76),(1400,74)]
+          profiles=[(1400,72),(1350,70)]
           chosen=None
           for maxw,q in profiles:
-              print(f'67F perfil {maxw}px q{q}',flush=True)
+              print(f'67F2 perfil {maxw}px q{q}',flush=True)
               with ProcessPoolExecutor(max_workers=4) as ex:
                   list(ex.map(recode,[(str(p),maxw,q) for p in files],chunksize=8))
               total=tree_bytes(root)
               chosen={'max_width':maxw,'quality':q,'site_mib':round(total/1024/1024,2),'v66_mib':round(tree_bytes(v66)/1024/1024,2)}
-              print('67F tamaño',chosen,flush=True)
+              print('67F2 tamaño',chosen,flush=True)
               if total <= 940*1024*1024:
                   break
 
@@ -206,7 +206,7 @@ jobs:
               with Image.open(p) as im:
                   im.verify(); widths.append(im.width); heights.append(im.height)
               sizes.append(p.stat().st_size)
-              if i%500==0: print(f'67F verificados {i+1}/{len(files)}',flush=True)
+              if i%500==0: print(f'67F2 verificados {i+1}/{len(files)}',flush=True)
           total=tree_bytes(root)
           assert total <= 940*1024*1024, f'Candidato aún excede Pages: {total/1024/1024:.1f} MiB'
           chosen.update({
@@ -218,24 +218,23 @@ jobs:
               'production_changed':False,
               'legacy_rasters_in_candidate':False
           })
-          Path('_site/v66/phase67f-hd.json').write_text(json.dumps(chosen,indent=2,ensure_ascii=False)+'\n')
-          Path('_67f_profile.json').write_text(json.dumps(chosen,indent=2,ensure_ascii=False)+'\n')
-          print('67F CANDIDATO HD OK',json.dumps(chosen,ensure_ascii=False),flush=True)
+          Path('_site/v66/phase67f2-hd.json').write_text(json.dumps(chosen,indent=2,ensure_ascii=False)+'\n')
+          Path('_67f2_profile.json').write_text(json.dumps(chosen,indent=2,ensure_ascii=False)+'\n')
+          print('67F2 CANDIDATO HD OK',json.dumps(chosen,ensure_ascii=False),flush=True)
           PY
 
       - name: Preparar informe y muestras representativas
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf _67f_report
-          mkdir -p _67f_report/samples
-          cp _67f_profile.json _67f_report/phase67f-profile.json
-          cp _site/v66/catalog.json _67f_report/catalog.json
+          rm -rf _67f2_report
+          mkdir -p _67f2_report/samples
+          cp _67f2_profile.json _67f2_report/phase67f2-profile.json
+          cp _site/v66/catalog.json _67f2_report/catalog.json
           python - <<'PY'
           import json, shutil
           from pathlib import Path
-          from PIL import Image
-          prof=json.loads(Path('_67f_profile.json').read_text())
+          prof=json.loads(Path('_67f2_profile.json').read_text())
           root=Path('_site/v66')
           cat=json.loads((root/'catalog.json').read_text())
           release=root/cat['base_path']
@@ -246,10 +245,10 @@ jobs:
               matches=[p for p in files if token in str(p).lower()]
               if matches:
                   p=matches[len(matches)//2]
-                  dst=Path('_67f_report/samples')/(token+'-'+p.name)
+                  dst=Path('_67f2_report/samples')/(token+'-'+p.name)
                   shutil.copy2(p,dst); picked.append(str(dst.name))
           lines=[
-            '# Fase 67F · candidato Schema66 HD', '',
+            '# Fase 67F2 · candidato Schema66 HD', '',
             '- Producción modificada: **NO**',
             '- Mapas: **4.861**',
             f'- Perfil elegido: **{prof["max_width"]} px · WebP q{prof["quality"]}**',
@@ -259,13 +258,13 @@ jobs:
             '- Legado ráster duplicado: **NO**',
             '', '## Muestras', *['- '+x for x in picked]
           ]
-          Path('_67f_report/README.md').write_text('\n'.join(lines)+'\n')
+          Path('_67f2_report/README.md').write_text('\n'.join(lines)+'\n')
           print('\n'.join(lines))
           PY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fase67f-candidato-schema66-hd
-          path: _67f_report/
+          name: fase67f2-candidato-schema66-hd
+          path: _67f2_report/
           retention-days: 7
           compression-level: 0
