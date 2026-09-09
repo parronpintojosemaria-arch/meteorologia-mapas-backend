@@ -1,0 +1,153 @@
+name: Fase 68A2 · Calidad completa y presupuesto · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase68a-quality]
+    paths:
+      - 'scripts/phase68a2_full_quality.py'
+      - 'scripts/phase68a2_budget.py'
+      - '.github/workflows/phase68a2-full-quality-budget.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  generate:
+    name: 68A2 · ${{ matrix.model }} · horizonte completo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        model: [ecmwf, gfs, icon]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar 68A2 completo
+        run: python scripts/phase68a2_full_quality.py '${{ matrix.model }}'
+
+      - name: Validar 68A2 del modelo
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          model='${{ matrix.model }}'
+          base=Path('experimental-phase68a2')/model
+          r=json.loads((base/'phase68a2-report.json').read_text(encoding='utf-8'))
+          assert r['phase']=='68A2' and r['status']=='ok'
+          assert r['production_changed'] is False
+          assert r['model']==model
+          assert r['render']=={'source_width':1600,'final_max_width':1400,'webp_quality':72}
+          expected_steps={'ecmwf':85,'gfs':129,'icon':93}[model]
+          expected_precip={'ecmwf':18,'gfs':19,'icon':92}[model]
+          assert r['counts']['wind_10m']==expected_steps
+          assert r['counts']['temperature_850hpa']==expected_steps
+          assert r['counts']['geopotential_850hpa']==expected_steps
+          assert r['counts']['analysis_850hpa']==expected_steps
+          assert r['counts']['precipitation_intensity']==expected_precip
+          files=list(base.rglob('*.webp'))
+          assert len(files)==expected_steps*4+expected_precip
+          for i,p in enumerate(files):
+              with Image.open(p) as im:
+                  im.verify()
+              with Image.open(p) as im:
+                  assert im.width==1400, (p,im.size)
+              if i and i%150==0:
+                  print('verificados',i,'/',len(files))
+          print('68A2 MODELO VALIDADO',model,'·',len(files),'mapas · producción intacta')
+          PY
+
+      - name: Subir candidato del modelo
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase68a2-${{ matrix.model }}
+          path: experimental-phase68a2/${{ matrix.model }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 5
+
+  budget:
+    name: 68A2 · presupuesto Pages y decisión 850
+    needs: generate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Descargar candidatos 68A2
+        uses: actions/download-artifact@v4
+        with:
+          pattern: 'fase68a2-*'
+          path: _down68a2
+          merge-multiple: false
+
+      - name: Medir producción actual y escenarios
+        run: python scripts/phase68a2_budget.py _down68a2 phase68a2-budget.json
+
+      - name: Validar informe de presupuesto
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('phase68a2-budget.json').read_text(encoding='utf-8'))
+          assert r['phase']=='68A2' and r['status']=='ok'
+          assert r['production_changed'] is False
+          assert r['public_catalog_maps']==4861
+          assert r['baseline_67g']['current_target_counts']=={
+              'wind_10m':307,'current_850hpa':307,'precipitation_intensity':129
+          }
+          assert r['candidate']['counts']=={
+              'wind_10m':307,'temperature_850hpa':307,'geopotential_850hpa':307,
+              'analysis_850hpa':307,'precipitation_intensity':129
+          }
+          assert r['recommendation'] in {
+              'separate_850_products','combined_850_analysis','needs_lower_profile_or_redesign'
+          }
+          print('68A2 PRESUPUESTO VALIDADO · recomendación:',r['recommendation'])
+          print(json.dumps(r['scenarios'],ensure_ascii=False,indent=2))
+          PY
+
+      - name: Preparar muestras finales 1400 q72
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _samples68a2
+          mkdir -p _samples68a2
+          for m in ecmwf gfs icon; do
+            root="_down68a2/fase68a2-$m"
+            for product in precipitation_intensity wind_10m temperature_850hpa geopotential_850hpa analysis_850hpa; do
+              cp "$root/$product/f024.webp" "_samples68a2/${m}-${product}-f024.webp"
+            done
+          done
+          cp phase68a2-budget.json _samples68a2/
+
+      - name: Subir presupuesto y muestras
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase68a2-presupuesto-y-muestras
+          path: _samples68a2/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
