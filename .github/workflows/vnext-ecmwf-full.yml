@@ -1,0 +1,170 @@
+name: vNext · ECMWF completo HD · 3.128 mapas · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - 'scripts/vnext_ecmwf_data.py'
+      - 'scripts/vnext_ecmwf_render.py'
+      - 'scripts/vnext_ecmwf_generate.py'
+      - 'scripts/vnext_ecmwf_assemble.py'
+      - 'scripts/vnext_current_guard.py'
+      - 'vnext/config/**'
+      - '.github/workflows/vnext-ecmwf-full.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-ecmwf-full-no-production
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Seleccionar pasada ECMWF completa +360 h
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      cycle: ${{ steps.cycle.outputs.cycle }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compilar vNext
+        run: |
+          python -m py_compile scripts/vnext_ecmwf_data.py
+          python -m py_compile scripts/vnext_ecmwf_render.py
+          python -m py_compile scripts/vnext_ecmwf_generate.py
+          python -m py_compile scripts/vnext_ecmwf_assemble.py
+          python -m py_compile scripts/vnext_current_guard.py
+      - name: Elegir ciclo común completo
+        run: python scripts/vnext_ecmwf_generate.py prepare
+      - id: cycle
+        name: Exportar ciclo
+        shell: bash
+        run: |
+          CYCLE=$(python -c "import json;print(json.load(open('vnext-full-out/ecmwf/prep.json'))['cycle'])")
+          echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
+          echo "ECMWF ciclo seleccionado: $CYCLE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vnext-ecmwf-full-prep
+          path: vnext-full-out/ecmwf/prep.json
+          retention-days: 3
+
+  generate:
+    name: Generar ${{ matrix.group }} · España 2400 · Europa 2800 · q92
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        group: [surface, lower, upper]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar grupo completo
+        run: python scripts/vnext_ecmwf_generate.py "${{ matrix.group }}" --cycle "${{ needs.prepare.outputs.cycle }}"
+      - name: Guard de grupo
+        env:
+          GROUP: ${{ matrix.group }}
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from PIL import Image
+          expected={'surface':1088,'lower':1020,'upper':1020}
+          group=os.environ['GROUP']; cycle=os.environ['CYCLE']
+          root=Path('vnext-full-out/ecmwf/cycles')/cycle
+          f=root/f'fragment-{group}.json'
+          m=json.loads(f.read_text(encoding='utf-8'))
+          assert m['status']=='ready' and m['production_changed'] is False
+          assert m['expected_count']==expected[group] and len(m['files'])==expected[group]
+          widths={'spain':2400,'europe':2800}
+          for row in m['files']:
+              p=root/row['path']
+              assert p.is_file() and p.stat().st_size>100
+              assert row['width']==widths[row['domain']] and row['height']>900
+          for row in (m['files'][0],m['files'][len(m['files'])//2],m['files'][-1]):
+              with Image.open(root/row['path']) as im: im.verify()
+          print('VNEXT GROUP OK',group,len(m['files']))
+          PY
+      - name: Subir grupo HD temporal
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-ecmwf-full-${{ matrix.group }}
+          path: vnext-full-out/ecmwf/cycles/${{ needs.prepare.outputs.cycle }}
+          retention-days: 3
+          compression-level: 1
+
+  assemble:
+    name: Ensamblar · validar 3.128 · medir espacio · current candidato
+    needs: [prepare, generate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pillow
+        run: python -m pip install --upgrade pillow
+      - name: Descargar los tres grupos
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vnext-ecmwf-full-*
+          path: vnext-full-merged/ecmwf
+          merge-multiple: true
+      - name: Eliminar prep si quedó mezclado
+        run: rm -f vnext-full-merged/ecmwf/prep.json
+      - name: Validación completa y presupuesto real
+        run: python scripts/vnext_ecmwf_assemble.py
+      - name: Construir current.json candidato anti-roturas
+        env:
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        run: |
+          python scripts/vnext_current_guard.py \
+            --model ecmwf \
+            --cycle "$CYCLE" \
+            --cycle-dir vnext-full-merged/ecmwf \
+            --base-url 'https://parronpintojosemaria-arch.github.io/meteorologia-mapas-ecmwf' \
+            --output vnext-full-summary/ecmwf/current-candidate.json
+      - name: Guard final sin producción
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('vnext-full-summary/ecmwf/report.json').read_text())
+          c=json.loads(Path('vnext-full-summary/ecmwf/current-candidate.json').read_text())
+          assert r['status']=='ok' and r['maps']==3128 and r['production_changed'] is False
+          assert c['status']=='ready' and c['file_count']==3128
+          print('VNEXT ECMWF FULL OK · 3128 ·',r['image_mib'],'MiB · fits single repo:',r['fits_single_model_pages_repo'])
+          PY
+      - name: Subir informe y muestras visuales
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-ecmwf-full-resumen-y-muestras
+          path: vnext-full-summary/ecmwf
+          retention-days: 7
+      - name: Protección producción
+        run: |
+          echo 'NO PUBLICA Pages.'
+          echo 'NO cambia current.json real.'
+          echo 'NO modifica Schema66 ni WordPress.'
