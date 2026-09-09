@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "spain": {
+    "label": "España",
+    "bbox": {"west": -11.5, "south": 34.0, "east": 5.5, "north": 45.5},
+    "render_width": 2400,
+    "target_dpi": 180,
+    "viewer_padding_px": 8
+  },
+  "europe": {
+    "label": "Europa",
+    "bbox": {"west": -28.0, "south": 30.0, "east": 45.0, "north": 72.0},
+    "render_width": 2800,
+    "target_dpi": 180,
+    "viewer_padding_px": 8
+  }
+}
