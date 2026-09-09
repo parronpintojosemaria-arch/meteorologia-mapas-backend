@@ -1,0 +1,33 @@
+name: vNext · current.json anti-roturas
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - 'scripts/vnext_current_guard.py'
+      - 'vnext/config/**'
+      - '.github/workflows/vnext-current-guard.yml'
+
+jobs:
+  current-guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compilar script
+        run: python -m py_compile scripts/vnext_current_guard.py
+
+      - name: Probar pasada completa y pasada rota
+        run: python scripts/vnext_current_guard.py --self-test
+
+      - name: Confirmar que esta fase no publica producción
+        run: |
+          echo 'vNext: solo valida el mecanismo current.json. No publica mapas ni modifica Schema66.'
