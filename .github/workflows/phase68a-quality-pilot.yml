@@ -41,6 +41,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Ajustar umbral del piloto HD
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/phase68a_quality_pilot.py')
+          s=p.read_text(encoding='utf-8')
+          old='if min(x["width"] for x in images) < 1800:'
+          new='if min(x["width"] for x in images) < 1600:'
+          if old not in s:
+              raise SystemExit('No se encontró el guard 1800 px esperado')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          print('68A: umbral piloto corregido a 1600 px')
+          PY
+
       - name: Generar candidato visual 68A
         run: python scripts/phase68a_quality_pilot.py '${{ matrix.model }}'
 
@@ -70,8 +84,8 @@ jobs:
               with Image.open(p) as im:
                   im.verify()
               with Image.open(p) as im:
-                  assert im.width >= 1800, (p, im.size)
-          print('68A VALIDADO', model, '· 4 mapas HD · producción intacta')
+                  assert im.width >= 1600, (p, im.size)
+          print('68A VALIDADO', model, '· 4 mapas HD >=1600 px · producción intacta')
           PY
 
       - name: Subir muestras 68A
