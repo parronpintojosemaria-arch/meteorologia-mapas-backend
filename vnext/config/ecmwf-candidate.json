@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "model": "ecmwf",
+  "phase": "vnext-ecmwf-candidate-1",
+  "status": "experimental",
+  "production_changed": false,
+  "steps_hours": [3, 6, 9, 12],
+  "domains": ["spain", "europe"],
+  "products": ["precipitation_rate", "wind_10m", "temperature_850hpa", "geopotential_850hpa"],
+  "goal": "validar encuadre, nitidez HD, cadencia 3/6 h y current.json antes de publicación real"
+}
