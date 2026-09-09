@@ -1,0 +1,84 @@
+name: Fase 68A · Calidad visual lluvia viento 850 · sin publicar
+
+on:
+  push:
+    branches:
+      - phase68a-quality
+    paths:
+      - 'scripts/phase68a_quality_pilot.py'
+      - '.github/workflows/phase68a-quality-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  quality-pilot:
+    name: 68A · ${{ matrix.model }} · lluvia viento 850
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        model: [ecmwf, gfs, icon]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generar candidato visual 68A
+        run: python scripts/phase68a_quality_pilot.py '${{ matrix.model }}'
+
+      - name: Validar candidato
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          model='${{ matrix.model }}'
+          base=Path('experimental-phase68a')/model
+          report=json.loads((base/'phase68a-report.json').read_text(encoding='utf-8'))
+          assert report['phase']=='68A'
+          assert report['status']=='ok'
+          assert report['production_changed'] is False
+          assert report['model']==model
+          assert set(report['viewer_focus'])=={'spain','europe'}
+          expected={
+              'temperature_850hpa-f024.webp',
+              'geopotential_850hpa-f024.webp',
+              'wind_10m-f024.webp',
+              'precipitation_intensity-f024.webp',
+          }
+          actual={p.name for p in base.glob('*.webp')}
+          assert actual==expected, (actual, expected)
+          for p in sorted(base.glob('*.webp')):
+              with Image.open(p) as im:
+                  im.verify()
+              with Image.open(p) as im:
+                  assert im.width >= 1800, (p, im.size)
+          print('68A VALIDADO', model, '· 4 mapas HD · producción intacta')
+          PY
+
+      - name: Subir muestras 68A
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase68a-${{ matrix.model }}-calidad
+          path: experimental-phase68a/${{ matrix.model }}/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
