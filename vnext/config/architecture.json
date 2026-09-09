@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "orchestrator_repo": "parronpintojosemaria-arch/meteorologia-mapas-backend",
+  "planned_pages_repositories": {
+    "ecmwf": "meteorologia-mapas-ecmwf",
+    "gfs": "meteorologia-mapas-gfs",
+    "icon": "meteorologia-mapas-icon-eu"
+  },
+  "planned_control_repository": "meteorologia-mapas-control",
+  "cycle_layout": "cycles/<YYYYMMDDTHHZ>/",
+  "pointer_layout": "models/<model>/current.json",
+  "publish_contract": {
+    "generate_to_new_cycle_directory": true,
+    "verify_all_expected_files": true,
+    "verify_manifest_status_ready": true,
+    "never_overwrite_active_cycle_in_place": true,
+    "switch_current_only_after_full_verification": true,
+    "keep_previous_current_on_any_failure": true
+  },
+  "quality_policy": {
+    "continuous_fields_resampling": "cubic",
+    "categorical_fields_resampling": "nearest",
+    "minimum_target_dpi": 150,
+    "preferred_target_dpi": 180,
+    "do_not_invent_model_resolution": true,
+    "do_not_interpolate_missing_forecast_times": true
+  }
+}
