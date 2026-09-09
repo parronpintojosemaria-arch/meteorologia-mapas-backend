@@ -1,0 +1,87 @@
+name: vNext · ECMWF HD España Europa · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - 'scripts/vnext_ecmwf_candidate.py'
+      - 'scripts/vnext_current_guard.py'
+      - 'vnext/config/**'
+      - '.github/workflows/vnext-ecmwf-candidate.yml'
+
+jobs:
+  ecmwf-vnext-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependencias del backend actual
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compilar scripts vNext
+        run: |
+          python -m py_compile scripts/vnext_ecmwf_candidate.py
+          python -m py_compile scripts/vnext_current_guard.py
+
+      - name: Generar candidato ECMWF vNext
+        run: python scripts/vnext_ecmwf_candidate.py
+
+      - name: Verificar manifiesto y construir current candidato
+        run: |
+          CYCLE_DIR=$(find vnext-out/ecmwf/cycles -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          test -n "$CYCLE_DIR"
+          CYCLE=$(basename "$CYCLE_DIR")
+          python scripts/vnext_current_guard.py \
+            --model ecmwf \
+            --cycle "$CYCLE" \
+            --cycle-dir "$CYCLE_DIR" \
+            --base-url 'https://parronpintojosemaria-arch.github.io/meteorologia-mapas-ecmwf' \
+            --output vnext-out/ecmwf/current-candidate.json
+
+      - name: Validación visual básica HD
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          roots=list((Path('vnext-out/ecmwf/cycles')).glob('*'))
+          assert len(roots)==1, roots
+          root=roots[0]
+          m=json.loads((root/'manifest.json').read_text(encoding='utf-8'))
+          assert m['status']=='ready'
+          assert m['production_changed'] is False
+          assert m['expected_count']==32
+          assert m['forecast_steps']==[3,6,9,12]
+          assert m['supported_animation_cadence_hours']==[3,6]
+          widths={'spain':2400,'europe':2800}
+          for item in m['files']:
+              p=root/item['path']
+              with Image.open(p) as im:
+                  im.verify()
+              with Image.open(p) as im:
+                  assert im.width==widths[item['domain']], (item['path'], im.size)
+                  assert im.height>800, (item['path'], im.size)
+          print('VNEXT ECMWF CANDIDATE VALIDATION OK · 32/32')
+          PY
+
+      - name: Subir candidato para inspección
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-ecmwf-hd-candidate
+          path: vnext-out/ecmwf
+          retention-days: 7
+
+      - name: Protección producción
+        run: echo 'Candidato únicamente. No publica Pages, no cambia current real y no modifica Schema66.'
