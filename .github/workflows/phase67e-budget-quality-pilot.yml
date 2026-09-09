@@ -1,0 +1,230 @@
+name: Fase 67E · Presupuesto y calidad HD · piloto
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase67e-production-hd]
+    paths:
+      - ".github/workflows/phase67e-budget-quality-pilot.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase67e-budget-quality-pilot
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: 67E · auditar Pages y muestras HD
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install Pillow
+
+      - name: Descargar Pages de producción actual
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _pages_artifact
+          repository: parronpintojosemaria-arch/meteorologia-mapas-backend
+          run-id: 34268395047
+          github-token: ${{ github.token }}
+
+      - name: Extraer sitio actual
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site_current
+          if [ -f _pages_artifact/artifact.tar ]; then
+            tar -xf _pages_artifact/artifact.tar -C _site_current
+          else
+            TAR="$(find _pages_artifact -type f -name '*.tar' | head -n1 || true)"
+            if [ -n "$TAR" ]; then
+              tar -xf "$TAR" -C _site_current
+            else
+              cp -a _pages_artifact/. _site_current/
+            fi
+          fi
+          test -f _site_current/v66/catalog.json
+          echo "Sitio actual extraído"
+          du -sh _site_current _site_current/v66 || true
+
+      - name: Descargar muestras 67D HD
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fase67d-*
+          path: _67d
+          repository: parronpintojosemaria-arch/meteorologia-mapas-backend
+          run-id: 34292879188
+          github-token: ${{ github.token }}
+
+      - name: Auditoría de tamaño y perfiles de calidad
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import json, os, shutil, subprocess
+
+          ROOT=Path('_site_current')
+          OUT=Path('_67e_report'); OUT.mkdir(exist_ok=True)
+          TARGET=940*1024*1024
+
+          def tree_bytes(p):
+              p=Path(p)
+              if not p.exists(): return 0
+              return sum(x.stat().st_size for x in p.rglob('*') if x.is_file())
+
+          total=tree_bytes(ROOT)
+          v66=tree_bytes(ROOT/'v66')
+          top=[]
+          for p in ROOT.iterdir():
+              top.append({'name':p.name,'bytes':tree_bytes(p) if p.is_dir() else p.stat().st_size})
+          top.sort(key=lambda x:x['bytes'], reverse=True)
+
+          # Paquete mínimo compatible con el plugin 0.5.19: v66 + manifiestos/ráster legacy
+          # de los tres modelos y archivos raíz de Pages. No se publica: solo se mide.
+          keep_dirs=['v66','ecmwf','gfs','icon-eu']
+          lean_fixed=0
+          for d in keep_dirs[1:]: lean_fixed += tree_bytes(ROOT/d)
+          for f in ROOT.iterdir():
+              if f.is_file(): lean_fixed += f.stat().st_size
+          v66_budget=max(0,TARGET-lean_fixed)
+
+          # Inventario real de artefactos 67C v3 pre-compresión usando GitHub API.
+          raw_artifact_bytes=None
+          try:
+              cmd=['gh','api','repos/parronpintojosemaria-arch/meteorologia-mapas-backend/actions/runs/34233511876/artifacts','--paginate']
+              txt=subprocess.check_output(cmd,text=True)
+              # gh --paginate puede concatenar varios JSON; normalmente cabe en una página.
+              docs=[]
+              dec=json.JSONDecoder(); s=txt.lstrip()
+              while s:
+                  obj,n=dec.raw_decode(s); docs.append(obj); s=s[n:].lstrip()
+              raw_artifact_bytes=sum(a.get('size_in_bytes',0) for d in docs for a in d.get('artifacts',[]))
+          except Exception as e:
+              print('Aviso inventario artefactos:',e)
+
+          # Dimensiones actuales de v66 para confirmar cuánto se redujo producción.
+          widths=[]; heights=[]; n=0
+          for imgp in (ROOT/'v66').rglob('*.webp'):
+              try:
+                  with Image.open(imgp) as im:
+                      widths.append(im.width); heights.append(im.height); n+=1
+              except Exception: pass
+          current_images={
+              'count':n,
+              'min_width':min(widths) if widths else None,
+              'max_width':max(widths) if widths else None,
+              'median_width':sorted(widths)[len(widths)//2] if widths else None,
+              'min_height':min(heights) if heights else None,
+              'max_height':max(heights) if heights else None,
+          }
+
+          # Elegir muestras 67D: lluvia/viento y 500 hPa de ambos modelos.
+          samples=[]
+          for p in Path('_67d').rglob('*.webp'):
+              low=str(p).lower()
+              if ('wind_10m' in low and 'f000' in low) or ('precipitation_total' in low and 'f024' in low) or ('500hpa' in low and 'f000' in low):
+                  samples.append(p)
+
+          profiles=[
+              ('original67d',None,None),
+              ('hd2000_q86',2000,86),
+              ('hd1800_q82',1800,82),
+              ('hd1600_q78',1600,78),
+          ]
+          profile_stats={k:{'bytes':0,'files':0,'examples':[]} for k,_,_ in profiles}
+          profdir=OUT/'samples'; profdir.mkdir(exist_ok=True)
+          for src in samples:
+              with Image.open(src) as im0:
+                  im0=im0.convert('RGBA')
+                  for key,maxw,q in profiles:
+                      if maxw is None:
+                          b=src.stat().st_size; w,h=im0.size
+                      else:
+                          im=im0.copy()
+                          if im.width>maxw:
+                              nh=round(im.height*maxw/im.width)
+                              im=im.resize((maxw,nh),Image.Resampling.LANCZOS)
+                          name=f"{src.parent.name}-{src.stem}-{key}.webp"
+                          dst=profdir/name
+                          im.save(dst,'WEBP',quality=q,method=6)
+                          b=dst.stat().st_size; w,h=im.size
+                      profile_stats[key]['bytes']+=b
+                      profile_stats[key]['files']+=1
+                      profile_stats[key]['examples'].append({'source':str(src),'width':w,'height':h,'bytes':b})
+
+          report={
+              'phase':'67E-pilot',
+              'production_changed':False,
+              'target_pages_bytes':TARGET,
+              'current_site_bytes':total,
+              'current_v66_bytes':v66,
+              'lean_fixed_bytes_without_v66':lean_fixed,
+              'available_v66_budget_bytes':v66_budget,
+              'top_level':top,
+              'current_v66_images':current_images,
+              'phase67c_v3_artifacts_bytes':raw_artifact_bytes,
+              'sample_profiles':profile_stats,
+              'notes':[
+                  'La prueba NO publica ni modifica GitHub Pages.',
+                  'Se preservan ecmwf/gfs/icon-eu porque el plugin 0.5.19 aún los usa en rutas legacy.',
+                  'El objetivo es evitar volver a 900-1200 px y calidad WebP agresiva.'
+              ]
+          }
+          (OUT/'phase67e-budget-report.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+
+          def mib(x): return round(x/1024/1024,1) if x is not None else None
+          lines=[
+              '# Fase 67E · auditoría de presupuesto/calidad',
+              '',
+              '- Producción modificada: **NO**',
+              f'- Sitio actual: **{mib(total)} MiB**',
+              f'- v66 actual: **{mib(v66)} MiB**',
+              f'- Fijo compatible sin v66: **{mib(lean_fixed)} MiB**',
+              f'- Presupuesto disponible para v66 bajo 940 MiB: **{mib(v66_budget)} MiB**',
+              f'- Imágenes v66: **{n}**, anchura mediana **{current_images["median_width"]} px**, rango **{current_images["min_width"]}–{current_images["max_width"]} px**',
+              f'- Artefactos 67C v3 precompresión (ZIP nivel 0): **{mib(raw_artifact_bytes) if raw_artifact_bytes else "n/d"} MiB**',
+              '', '## Perfiles de muestra 67D'
+          ]
+          for k in profile_stats:
+              s=profile_stats[k]
+              avg=round(s['bytes']/max(1,s['files'])/1024,1)
+              lines.append(f'- {k}: {s["files"]} muestras, media **{avg} KiB/mapa**')
+          lines += ['', '## Directorios más pesados']
+          for x in top[:15]: lines.append(f'- {x["name"]}: {mib(x["bytes"])} MiB')
+          (OUT/'README.md').write_text('\n'.join(lines)+'\n')
+          print('\n'.join(lines))
+          PY
+
+      - name: Validar que el piloto no toca producción
+        run: |
+          python - <<'PY'
+          import json
+          d=json.load(open('_67e_report/phase67e-budget-report.json'))
+          assert d['phase']=='67E-pilot'
+          assert d['production_changed'] is False
+          assert d['current_v66_images']['count'] >= 4800
+          assert d['available_v66_budget_bytes'] > 0
+          print('67E piloto OK · producción intacta')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fase67e-piloto-presupuesto-calidad
+          path: _67e_report/
+          retention-days: 7
+          compression-level: 0
