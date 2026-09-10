@@ -1,0 +1,63 @@
+name: vNext · GFS todos los niveles · guard +384 · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vnext-mapas-profesional]
+    paths:
+      - 'scripts/vnext_gfs_all_levels_guard.py'
+      - '.github/workflows/vnext-gfs-all-levels-guard.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-gfs-all-levels-guard-no-production
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: GFS 925/850/700/500/300/250/200 · +0/+384 · NOAA NOMADS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compilar
+        run: |
+          python -m py_compile scripts/vnext_gfs_preflight.py
+          python -m py_compile scripts/vnext_gfs_all_levels_guard.py
+      - name: Validar todos los niveles GFS
+        run: python scripts/vnext_gfs_all_levels_guard.py
+      - name: Guard científico y anti-producción
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('vnext-gfs-all-levels-guard/manifest.json').read_text())
+          assert m['status']=='ready'
+          assert m['production_changed'] is False
+          assert m['levels_hpa']==[925,850,700,500,300,250,200]
+          assert m['steps']==[0,384]
+          assert m['expected_checks']==100
+          assert len(m['checks'])==100
+          print('VNEXT GFS ALL LEVELS GUARD OK · 100/100 · ciclo',m['cycle'])
+          PY
+      - name: Subir manifiesto de comprobación
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-gfs-all-levels-guard
+          path: vnext-gfs-all-levels-guard/manifest.json
+          retention-days: 7
+      - name: Protección producción
+        run: |
+          echo 'NO PUBLICA Pages.'
+          echo 'NO cambia current.json real.'
+          echo 'NO modifica Schema66 ni WordPress.'
