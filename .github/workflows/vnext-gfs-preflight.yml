@@ -1,0 +1,64 @@
+name: vNext · GFS HD preflight · España Europa · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vnext-mapas-profesional]
+    paths:
+      - 'scripts/vnext_gfs_preflight.py'
+      - '.github/workflows/vnext-gfs-preflight.yml'
+      - 'vnext/config/domains.json'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-gfs-preflight-no-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: GFS +0 y +384 · 28 mapas HD · NOAA NOMADS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compilar
+        run: |
+          python -m py_compile scripts/vnext_gfs_preflight.py
+          python -m py_compile scripts/vnext_ecmwf_render.py
+      - name: Generar y validar candidato GFS
+        run: python scripts/vnext_gfs_preflight.py
+      - name: Guard 28/28 y no producción
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('vnext-gfs-preflight-out/manifest.json').read_text())
+          assert m['status']=='ready'
+          assert m['expected_count']==28 and len(m['files'])==28
+          assert m['production_changed'] is False
+          assert {x['domain'] for x in m['files']}=={'spain','europe'}
+          assert {x['step'] for x in m['files']}=={0,384}
+          print('VNEXT GFS PREFLIGHT OK · 28/28 ·',m['mib'],'MiB · ciclo',m['cycle'])
+          PY
+      - name: Subir candidato y manifiesto
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-gfs-preflight-28-hd
+          path: vnext-gfs-preflight-out
+          retention-days: 7
+          compression-level: 1
+      - name: Protección producción
+        run: |
+          echo 'NO PUBLICA Pages.'
+          echo 'NO cambia current.json real.'
+          echo 'NO modifica Schema66 ni WordPress.'
