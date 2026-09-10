@@ -61,6 +61,21 @@ def entry(out: Path, cycle_dir: Path, product: str, domain: str, step: int,
     return row
 
 
+def image_ptype_gfs(a: np.ndarray, out: Path) -> None:
+    rounded = np.rint(np.nan_to_num(a, nan=-9999)).astype('int16')
+    rgba = np.zeros((a.shape[0], a.shape[1], 4), dtype='uint8')
+    valid = np.isfinite(a)
+    for code, color in T.TYPE_COLORS.items():
+        rgba[valid & (rounded == int(code))] = color
+    unknown = valid & ~np.isin(rounded, np.array(list(T.TYPE_COLORS), dtype='int16'))
+    if np.any(unknown):
+        raise RuntimeError(f'GFS PTYPE contiene códigos sin paleta: {sorted(int(x) for x in np.unique(rounded[unknown]))}')
+    out.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(rgba, 'RGBA').save(out, 'WEBP', quality=R.WEBP_QUALITY, method=6, exact=True)
+    with Image.open(out) as im:
+        im.verify()
+
+
 def cleanup_apcp(run: datetime, step: int) -> None:
     prefix = f'{run:%Y%m%d%H}_f{step:03d}_'
     for p in P.RAW.glob(prefix + '*var_APCP*'):
@@ -143,8 +158,8 @@ def fragment(cycle_dir: Path, group: str, run: datetime, files: list[dict]) -> N
 
 def core_surface(run: datetime, step: int):
     t, tu, tb, _ = P.retrieve(run, step, 'lev_2_m_above_ground', 'var_TMP')
-    u, uu, ub, _ = P.retrieve(run, step, 'lev_10_m_above_ground', 'var_UGRD')
-    v, vu, vb, _ = P.retrieve(run, step, 'lev_10_m_above_ground', 'var_VGRD')
+    u, _, ub, _ = P.retrieve(run, step, 'lev_10_m_above_ground', 'var_UGRD')
+    v, _, vb, _ = P.retrieve(run, step, 'lev_10_m_above_ground', 'var_VGRD')
     if ub != vb:
         raise RuntimeError(f'f{step:03d}: U/V10 no comparten malla')
     c, cu, cb, _ = P.retrieve(run, step, 'lev_entire_atmosphere', 'var_TCDC', {'stepType': 'instant'})
@@ -228,8 +243,7 @@ def surface(run: datetime) -> None:
                 R.continuous(rate_g, o, R.RAIN, colors.SymLogNorm(linthresh=.08, vmin=.02, vmax=60, base=10), .92, .02)
                 files.append(entry(o, root, 'precipitation_rate', domain, step, 'mm/h', 'PRATE instantáneo oficial; cúbico solo visual', bbox))
                 o = image_path(root, domain, 'precipitation_type', step)
-                o.parent.mkdir(parents=True, exist_ok=True)
-                R.ptype(type_g, o)
+                image_ptype_gfs(type_g, o)
                 files.append(entry(o, root, 'precipitation_type', domain, step, 'bitmask GFS', 'máscara oficial CRAIN/CSNOW/CFRZR/CICEP; nearest, nunca interpolada', bbox, {'observed_codes': observed}))
         if i == 1 or i % 8 == 0 or i == len(STEPS):
             print(f'GFS surface {i}/{len(STEPS)} mapas={len(files)}', flush=True)
@@ -265,14 +279,14 @@ def pressure(run: datetime, group: str) -> None:
                 product = f'analysis_{lev}hpa'
                 o = image_path(root, domain, product, step)
                 R.analysis(tg, zg, lev, o)
-                files.append(entry(o, root, product, domain, step, '°C + m', 'temperatura en color + altura geopotencial en isolíneas; datos GFS oficiales', bbox, {'level_hpa': lev}))
+                files.append(entry(o, root, product, domain, step, '°C + dam', 'temperatura en color + altura geopotencial en isolíneas; datos GFS oficiales', bbox, {'level_hpa': lev}))
                 if group == 'lower' and lev == 850:
                     o = image_path(root, domain, 'temperature_850hpa', step)
                     R.temp850(tg, o)
                     files.append(entry(o, root, 'temperature_850hpa', domain, step, '°C', 'temperatura oficial GFS a 850 hPa', bbox, {'level_hpa': 850}))
                     o = image_path(root, domain, 'geopotential_850hpa', step)
                     R.geop850(zg, o)
-                    files.append(entry(o, root, 'geopotential_850hpa', domain, step, 'm', 'altura geopotencial oficial GFS a 850 hPa', bbox, {'level_hpa': 850}))
+                    files.append(entry(o, root, 'geopotential_850hpa', domain, step, 'dam', 'altura geopotencial oficial GFS a 850 hPa; rotulado en decámetros', bbox, {'level_hpa': 850}))
                 if group == 'upper':
                     sg = P.project(speed, ub, bbox, width)
                     product = f'jet_{lev}hpa'
