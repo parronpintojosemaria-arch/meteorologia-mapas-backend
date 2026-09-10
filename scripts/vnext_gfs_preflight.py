@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, math, os
+import json, math, os, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -45,10 +46,26 @@ def download(run,step,level,var,tag,left,right):
     path=RAW/f'{run:%Y%m%d%H}_f{step:03d}_{tag}_{level}_{var}.grib2'
     url=nomads_url(run,step,level,var,left,right)
     req=Request(url,headers={'User-Agent':'Meteorologia-Interactiva-vNext/1.0'})
-    with urlopen(req,timeout=120) as res: data=res.read()
-    if len(data)<100 or not data.startswith(b'GRIB'):
-        raise RuntimeError(f'NOMADS no devolvió GRIB válido {tag} {level} {var}: '+data[:180].decode('utf-8','ignore'))
-    path.write_bytes(data); return path,url
+    attempts=6
+    last_error=None
+    for attempt in range(1,attempts+1):
+        try:
+            with urlopen(req,timeout=120) as res:
+                data=res.read()
+            if len(data)<100 or not data.startswith(b'GRIB'):
+                preview=data[:180].decode('utf-8','ignore')
+                raise RuntimeError(f'NOMADS no devolvió GRIB válido {tag} {level} {var}: {preview}')
+            path.write_bytes(data)
+            return path,url
+        except (HTTPError, URLError, ConnectionResetError, TimeoutError, OSError, RuntimeError) as e:
+            last_error=e
+            path.unlink(missing_ok=True)
+            if attempt>=attempts:
+                break
+            delay=min(60,5*(2**(attempt-1)))
+            print(f'NOMADS reintento {attempt}/{attempts-1} en {delay}s · f{step:03d} {tag} {level} {var} · {type(e).__name__}: {e}',flush=True)
+            time.sleep(delay)
+    raise RuntimeError(f'NOMADS agotó {attempts} intentos · f{step:03d} {tag} {level} {var}: {last_error}') from last_error
 
 def open_da(path,filter_keys=None):
     kwargs={'indexpath':''}
