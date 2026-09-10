@@ -1,0 +1,173 @@
+name: vNext · GFS completo HD · 5.154 mapas · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - 'scripts/vnext_gfs_generate.py'
+      - 'scripts/vnext_gfs_assemble.py'
+      - 'scripts/vnext_gfs_preflight.py'
+      - 'scripts/vnext_gfs_precip_guard.py'
+      - 'scripts/gfs_precip_snow_phase23.py'
+      - 'scripts/precip_type_intensity_phase30.py'
+      - 'scripts/vnext_ecmwf_render.py'
+      - 'scripts/vnext_current_guard.py'
+      - 'vnext/config/**'
+      - '.github/workflows/vnext-gfs-full.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-gfs-full-no-production
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Seleccionar pasada GFS completa +384 h
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      cycle: ${{ steps.cycle.outputs.cycle }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compilar vNext GFS
+        run: |
+          python -m py_compile scripts/vnext_gfs_generate.py
+          python -m py_compile scripts/vnext_gfs_assemble.py
+          python -m py_compile scripts/vnext_gfs_preflight.py
+          python -m py_compile scripts/vnext_gfs_precip_guard.py
+          python -m py_compile scripts/vnext_current_guard.py
+      - name: Elegir ciclo común completo
+        run: python scripts/vnext_gfs_generate.py prepare
+      - id: cycle
+        name: Exportar ciclo
+        shell: bash
+        run: |
+          CYCLE=$(python -c "import json;print(json.load(open('vnext-full-out/gfs/prep.json'))['cycle'])")
+          echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
+          echo "GFS ciclo seleccionado: $CYCLE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vnext-gfs-full-prep
+          path: vnext-full-out/gfs/prep.json
+          retention-days: 3
+
+  generate:
+    name: Generar ${{ matrix.group }} · España 2400 · Europa 2800 · q92
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        group: [surface, lower, upper]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generar grupo completo
+        run: python scripts/vnext_gfs_generate.py "${{ matrix.group }}" --cycle "${{ needs.prepare.outputs.cycle }}"
+      - name: Guard de grupo
+        env:
+          GROUP: ${{ matrix.group }}
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from PIL import Image
+          expected={'surface':2058,'lower':1548,'upper':1548}
+          group=os.environ['GROUP']; cycle=os.environ['CYCLE']
+          root=Path('vnext-full-out/gfs/cycles')/cycle
+          f=root/f'fragment-{group}.json'
+          m=json.loads(f.read_text(encoding='utf-8'))
+          assert m['status']=='ready' and m['production_changed'] is False
+          assert m['expected_count']==expected[group] and len(m['files'])==expected[group]
+          widths={'spain':2400,'europe':2800}
+          for row in m['files']:
+              p=root/row['path']
+              assert p.is_file() and p.stat().st_size>100
+              assert row['width']==widths[row['domain']] and row['height']>900
+          for row in (m['files'][0],m['files'][len(m['files'])//2],m['files'][-1]):
+              with Image.open(root/row['path']) as im: im.verify()
+          print('VNEXT GFS GROUP OK',group,len(m['files']))
+          PY
+      - name: Subir grupo HD temporal
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-gfs-full-${{ matrix.group }}
+          path: vnext-full-out/gfs/cycles/${{ needs.prepare.outputs.cycle }}
+          retention-days: 3
+          compression-level: 1
+
+  assemble:
+    name: Ensamblar · validar 5.154 · medir espacio · current candidato
+    needs: [prepare, generate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pillow
+        run: python -m pip install --upgrade pillow
+      - name: Descargar los tres grupos
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vnext-gfs-full-*
+          path: vnext-full-merged/gfs
+          merge-multiple: true
+      - name: Eliminar prep si quedó mezclado
+        run: rm -f vnext-full-merged/gfs/prep.json
+      - name: Validación completa y presupuesto real
+        run: python scripts/vnext_gfs_assemble.py
+      - name: Construir current.json candidato anti-roturas
+        env:
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        run: |
+          python scripts/vnext_current_guard.py \
+            --model gfs \
+            --cycle "$CYCLE" \
+            --cycle-dir vnext-full-merged/gfs \
+            --base-url 'https://parronpintojosemaria-arch.github.io/meteorologia-mapas-gfs' \
+            --output vnext-full-summary/gfs/current-candidate.json
+      - name: Guard final sin producción
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('vnext-full-summary/gfs/report.json').read_text())
+          c=json.loads(Path('vnext-full-summary/gfs/current-candidate.json').read_text())
+          assert r['status']=='ok' and r['maps']==5154 and r['production_changed'] is False
+          assert c['status']=='ready' and c['file_count']==5154
+          print('VNEXT GFS FULL OK · 5154 ·',r['image_mib'],'MiB · fits single repo:',r['fits_single_model_pages_repo'])
+          PY
+      - name: Subir informe y muestras visuales
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-gfs-full-resumen-y-muestras
+          path: vnext-full-summary/gfs
+          retention-days: 7
+      - name: Protección producción
+        run: |
+          echo 'NO PUBLICA Pages.'
+          echo 'NO cambia current.json real.'
+          echo 'NO modifica Schema66 ni WordPress.'
