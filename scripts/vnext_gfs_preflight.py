@@ -129,12 +129,13 @@ def fields(run,step):
         out[f't{lev}']=(celsius(t,tu),bt);out[f'z{lev}']=(height_m(z,zu),bz);out[f'wind{lev}']=(np.sqrt(ug*ug+vg*vg)*3.6,bu)
     return out,sources
 
-def edge_ok(path):
-    with Image.open(path).convert('RGBA') as im:
-        a=np.asarray(im)
-    alpha=a[...,3]
-    strips=np.concatenate([alpha[:8,:].ravel(),alpha[-8:,:].ravel(),alpha[:,:8].ravel(),alpha[:,-8:].ravel()])
-    return float(np.mean(strips>10))>0.05
+def data_edge_ok(a):
+    finite=np.isfinite(a)
+    if not finite.any(): return False
+    h,w=finite.shape
+    n=max(2,min(8,h//20,w//20))
+    strips=np.concatenate([finite[:n,:].ravel(),finite[-n:,:].ravel(),finite[:,:n].ravel(),finite[:,-n:].ravel()])
+    return float(np.mean(strips))>0.98
 
 def main():
     cfg=json.loads((ROOT/'vnext/config/domains.json').read_text())
@@ -144,6 +145,9 @@ def main():
         for domain in ('spain','europe'):
             d=cfg[domain];bbox=d['bbox'];width=int(d['render_width']);root=OUT/'gfs'/manifest['cycle']/domain/f'f{step:03d}'
             arr={k:project(v[0],v[1],bbox,width) for k,v in f.items()}
+            for field_name,grid in arr.items():
+                if not data_edge_ok(grid):
+                    raise RuntimeError(f'{domain} f{step:03d} {field_name}: cobertura de datos insuficiente en el borde del dominio')
             jobs=[
                 ('temperature_2m',lambda p:R.continuous(arr['t2'],p,R.TEMP,colors.Normalize(-35,45,clip=True),.90)),
                 ('wind_10m',lambda p:R.continuous(arr['wind10'],p,R.WIND,colors.PowerNorm(gamma=.78,vmin=0,vmax=180,clip=True),.91)),
@@ -158,7 +162,7 @@ def main():
                 with Image.open(path) as im:
                     w,h=im.size;im.verify()
                 if w!=width or h<900: raise RuntimeError(f'{path}: dimensión {w}x{h}')
-                if not edge_ok(path): raise RuntimeError(f'{path}: posible borde vacío')
+                if path.stat().st_size<256: raise RuntimeError(f'{path}: WebP vacío o corrupto')
                 manifest['files'].append({'path':str(path.relative_to(OUT)).replace(os.sep,'/'),'product':product,'domain':domain,'step':step,'width':w,'height':h,'bytes':path.stat().st_size})
     expected=len(STEPS)*2*len(PRODUCTS)
     if len(manifest['files'])!=expected: raise RuntimeError(f'conteo {len(manifest["files"])} != {expected}')
