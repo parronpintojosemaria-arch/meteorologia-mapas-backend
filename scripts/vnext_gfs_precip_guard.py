@@ -89,12 +89,15 @@ def main():
         if any(int(x['startStep']) != 0 or int(x['endStep']) != step or x['stepType'] != 'accum' for x in metas):
             raise RuntimeError(f'f{step:03d}: APCP no es acumulación 0-{step}')
 
-        pr, pru, prb, _ = P.retrieve(run, step, 'lev_surface', 'var_PRATE')
+        # NOMADS puede devolver para PRATE más de un stepType en el mismo GRIB.
+        # Elegimos explícitamente el campo instantáneo, que es el producto que
+        # queremos mostrar y el que ya usa el generador GFS validado anterior.
+        pr, pru, prb, _ = P.retrieve(run, step, 'lev_surface', 'var_PRATE', {'stepType': 'instant'})
         rate = T.rate_to_mmh(pr, pru)
         flags = []
         fb = None
         for var in ('var_CRAIN', 'var_CSNOW', 'var_CFRZR', 'var_CICEP'):
-            a, _, b, _ = P.retrieve(run, step, 'lev_surface', var)
+            a, _, b, _ = P.retrieve(run, step, 'lev_surface', var, {'stepType': 'instant'})
             if fb is None:
                 fb = b
             elif b != fb:
@@ -115,7 +118,7 @@ def main():
         print(f'GFS precip guard f{step:03d} OK', flush=True)
 
     for step in STEPS_SNOW:
-        sd, sdu, sdb, _ = P.retrieve(run, step, 'lev_surface', 'var_SNOD')
+        sd, sdu, sdb, _ = P.retrieve(run, step, 'lev_surface', 'var_SNOD', {'stepType': 'instant'})
         cm = S.snow_depth_cm(sd, sdu)
         for domain in ('spain', 'europe'):
             m['checks'].append({'step': step, 'domain': domain, 'product': 'snow_depth', **check_domain(f'{domain} f{step:03d} SNOD', cm, sdb, cfg[domain])})
