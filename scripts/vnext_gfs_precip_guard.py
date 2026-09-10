@@ -52,21 +52,48 @@ def total_precip(run, step):
     return S.precip_mm(vals, units), bounds, metas, urls
 
 
-def check_domain(name, vals, bounds, cfg, resampling=Resampling.cubic):
+def check_domain(
+    name,
+    vals,
+    bounds,
+    cfg,
+    resampling=Resampling.cubic,
+    require_full_edges=True,
+    min_finite_fraction=0.05,
+):
+    # P.project comprueba primero que los límites geográficos del campo fuente
+    # cubran por completo el dominio solicitado. Después validamos la máscara
+    # según la naturaleza de cada variable.
     grid = P.project(vals, bounds, cfg['bbox'], int(cfg['render_width']), resampling)
-    if not P.data_edge_ok(grid):
+    finite = np.isfinite(grid)
+    finite_fraction = float(np.mean(finite))
+
+    if require_full_edges and not P.data_edge_ok(grid):
         raise RuntimeError(f'{name}: cobertura insuficiente en el borde')
-    f = grid[np.isfinite(grid)]
+
+    f = grid[finite]
     if not f.size:
         raise RuntimeError(f'{name}: sin datos finitos')
-    return {'min': float(np.nanmin(f)), 'max': float(np.nanmax(f)), 'shape': list(grid.shape)}
+    if finite_fraction < min_finite_fraction:
+        raise RuntimeError(
+            f'{name}: solo {finite_fraction:.3f} de píxeles con dato; '
+            f'mínimo permitido {min_finite_fraction:.3f}'
+        )
+
+    return {
+        'min': float(np.nanmin(f)),
+        'max': float(np.nanmax(f)),
+        'shape': list(grid.shape),
+        'finite_fraction': round(finite_fraction, 4),
+        'full_edge_required': bool(require_full_edges),
+    }
 
 
 def main():
     cfg = json.loads((ROOT / 'vnext/config/domains.json').read_text(encoding='utf-8'))
     run = P.common_run()
     m = {
-        'schema': 1,
+        'schema': 2,
         'phase': 'vNext GFS precipitation guard',
         'status': 'ready',
         'production_changed': False,
@@ -81,6 +108,11 @@ def main():
             'precipitation_rate': 'PRATE instantáneo oficial convertido a mm/h',
             'precipitation_type': 'máscara oficial GFS: lluvia/nieve/engelante/gránulos; nearest',
             'snow_depth': 'SNOD instantáneo en el suelo; NO es nieve caída acumulada',
+        },
+        'coverage_policy': {
+            'precipitation': 'requiere cobertura finita continua hasta los bordes del dominio',
+            'snow_depth': 'SNOD conserva su máscara terrestre/oceánica; se exige cobertura geográfica del GRIB y una fracción finita no vacía, no bordes oceánicos finitos',
+            'snow_depth_resampling_for_guard': 'nearest para conservar la máscara original',
         },
     }
 
@@ -121,7 +153,25 @@ def main():
         sd, sdu, sdb, _ = P.retrieve(run, step, 'lev_surface', 'var_SNOD', {'stepType': 'instant'})
         cm = S.snow_depth_cm(sd, sdu)
         for domain in ('spain', 'europe'):
-            m['checks'].append({'step': step, 'domain': domain, 'product': 'snow_depth', **check_domain(f'{domain} f{step:03d} SNOD', cm, sdb, cfg[domain])})
+            # SNOD tiene máscara válida sobre superficies donde el producto no
+            # está definido (principalmente océano). No exigimos que esos
+            # píxeles sean finitos: hacerlo confundiría máscara física con
+            # falta de cobertura. La cobertura geográfica se sigue validando
+            # dentro de P.project y exigimos que el campo útil no esté vacío.
+            m['checks'].append({
+                'step': step,
+                'domain': domain,
+                'product': 'snow_depth',
+                **check_domain(
+                    f'{domain} f{step:03d} SNOD',
+                    cm,
+                    sdb,
+                    cfg[domain],
+                    Resampling.nearest,
+                    require_full_edges=False,
+                    min_finite_fraction=0.05,
+                ),
+            })
         print(f'GFS snow-depth guard f{step:03d} OK', flush=True)
 
     expected = len(STEPS_PRECIP) * 2 * 3 + len(STEPS_SNOW) * 2
