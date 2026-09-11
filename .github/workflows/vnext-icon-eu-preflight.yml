@@ -1,0 +1,94 @@
+name: vNext · ICON-EU preflight · +120 h · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - 'scripts/vnext_icon_eu_preflight.py'
+      - 'vnext/config/**'
+      - '.github/workflows/vnext-icon-eu-preflight.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-icon-eu-preflight-no-production
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Verificar DWD ICON-EU completo +120 h
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compilar preflight
+        run: python -m py_compile scripts/vnext_icon_eu_preflight.py
+
+      - name: Verificar ICON-EU oficial DWD
+        run: python scripts/vnext_icon_eu_preflight.py
+
+      - name: Guard de horizonte, variables y cadencia
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path('vnext-icon-preflight/icon-eu/preflight.json')
+          assert p.is_file(), p
+          r = json.loads(p.read_text(encoding='utf-8'))
+
+          assert r['status'] == 'ok', r.get('failure_notes')
+          assert r['production_changed'] is False
+          assert r['official_horizon_hours'] == 120
+
+          steps = r['cadence_policy']['forecast_steps']
+          assert steps[0] == 0 and steps[-1] == 120
+          assert 78 in steps and 81 in steps
+          assert 79 not in steps and 80 not in steps
+          assert steps[:79] == list(range(0, 79))
+          assert steps[79:] == list(range(81, 121, 3))
+
+          assert set(r['pressure']) == {
+              '925hpa','850hpa','700hpa','500hpa','300hpa','250hpa','200hpa'
+          }
+          for level, block in r['pressure'].items():
+              assert set(block) == {'temperature','geopotential','wind_u','wind_v'}, level
+              assert all(v.get('available') is True for v in block.values()), level
+
+          for key in ('f000','f078','f081','f120'):
+              assert key in r['surface'], key
+
+          assert r['summary']['failures'] == 0
+          assert r['summary']['successes'] == r['summary']['expected']
+
+          print(
+              'VNEXT ICON-EU PREFLIGHT OK ·',
+              r['cycle'],
+              '·', len(steps), 'pasos ·',
+              r['summary']['successes'], '/', r['summary']['expected']
+          )
+          PY
+
+      - name: Subir informe de preflight
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-icon-eu-preflight
+          path: vnext-icon-preflight/icon-eu
+          retention-days: 7
+
+      - name: Protección producción
+        run: |
+          echo 'NO publica Pages.'
+          echo 'NO cambia current.json real.'
+          echo 'NO modifica Schema66 ni WordPress.'
