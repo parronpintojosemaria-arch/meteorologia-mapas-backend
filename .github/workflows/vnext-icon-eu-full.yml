@@ -5,7 +5,7 @@ on:
     paths:
       - '.github/workflows/vnext-icon-eu-full.yml'
       - 'scripts/icon_eu_operational_selector_phase55.py'
-      - 'scripts/icon_eu_surface_operational_block.py'
+      - 'scripts/icon_eu_surface_vnext_full_block.py'
       - 'scripts/icon_eu_aloft_operational_block.py'
       - 'scripts/icon_eu_operational_merge.py'
   workflow_dispatch:
@@ -58,8 +58,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Generar superficie completa
-        run: python scripts/icon_eu_surface_operational_block.py
+      - name: Generar superficie completa con validación de borde trazable
+        run: python scripts/icon_eu_surface_vnext_full_block.py
       - uses: actions/upload-artifact@v4
         with:
           name: vnext-icon-eu-full-surface-${{ matrix.id }}
