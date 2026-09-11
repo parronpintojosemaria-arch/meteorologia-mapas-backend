@@ -31,7 +31,7 @@ def candidates():
    if dt<=safe: out.append(dt)
  return sorted(set(out),reverse=True)
 
-def retrieve(group,run_dt,step,levtype,params,target,levels=None,attempts=2):
+def retrieve(group,run_dt,step,levtype,params,target,levels=None,attempts=3):
  req={'type':'fc','step':int(step),'levtype':levtype,'param':list(params),'date':int(run_dt.strftime('%Y%m%d')),'time':int(run_dt.strftime('%H'))}
  if levels is not None: req['levelist']=[int(x) for x in levels]
  errors=[]; target.parent.mkdir(parents=True,exist_ok=True)
@@ -43,9 +43,12 @@ def retrieve(group,run_dt,step,levtype,params,target,levels=None,attempts=2):
     if not target.is_file() or target.stat().st_size<100: raise RuntimeError('GRIB vacío')
     return source,errors
    except Exception as exc:
-    errors.append(f'{source} intento {attempt}: {exc}'); target.unlink(missing_ok=True)
-    if attempt<attempts: time.sleep(3*attempt)
- raise RuntimeError(f'ECMWF {group} f{step:03d} {levtype} {params}: '+' | '.join(errors[-6:]))
+    errors.append(f'{source} intento {attempt}/{attempts}: {exc}'); target.unlink(missing_ok=True)
+    if attempt<attempts:
+     wait=min(20,4*(2**(attempt-1)))
+     print(f'ECMWF descarga temporalmente fallida · {source} · intento {attempt}/{attempts} · reintento en {wait}s')
+     time.sleep(wait)
+ raise RuntimeError(f'ECMWF {group} f{step:03d} {levtype} {params}: '+' | '.join(errors[-9:]))
 
 def open_grib(path): return cfgrib.open_datasets(str(path),backend_kwargs={'indexpath':''})
 
