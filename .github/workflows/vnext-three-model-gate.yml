@@ -1,0 +1,257 @@
+name: vNext · Gate 3 modelos completos · 9.770 mapas · sin publicar
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - '.github/workflows/vnext-three-model-gate.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-three-model-gate-no-production
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Validar GFS 5.154 + ECMWF 3.128 + ICON-EU 1.488
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolver últimas ejecuciones verdes de los 3 modelos
+        id: runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolve_run() {
+            workflow="$1"
+            curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=vnext-mapas-profesional&status=success&per_page=20" \
+              | python -c "import json,sys; d=json.load(sys.stdin); r=[x for x in d.get('workflow_runs',[]) if x.get('conclusion')=='success']; print(r[0]['id'] if r else '')"
+          }
+
+          GFS_RUN="$(resolve_run vnext-gfs-full.yml)"
+          ECMWF_RUN="$(resolve_run vnext-ecmwf-full.yml)"
+          ICON_RUN="$(resolve_run vnext-icon-eu-full.yml)"
+
+          test -n "$GFS_RUN"
+          test -n "$ECMWF_RUN"
+          test -n "$ICON_RUN"
+
+          echo "gfs=$GFS_RUN" >> "$GITHUB_OUTPUT"
+          echo "ecmwf=$ECMWF_RUN" >> "$GITHUB_OUTPUT"
+          echo "icon=$ICON_RUN" >> "$GITHUB_OUTPUT"
+          echo "GFS run: $GFS_RUN"
+          echo "ECMWF run: $ECMWF_RUN"
+          echo "ICON-EU run: $ICON_RUN"
+
+      - name: Verificar jobs finales y artefactos candidatos
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GFS_RUN: ${{ steps.runs.outputs.gfs }}
+          ECMWF_RUN: ${{ steps.runs.outputs.ecmwf }}
+          ICON_RUN: ${{ steps.runs.outputs.icon }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          runs = {
+              'gfs': int(os.environ['GFS_RUN']),
+              'ecmwf': int(os.environ['ECMWF_RUN']),
+              'icon_eu': int(os.environ['ICON_RUN']),
+          }
+
+          def api(path):
+              req = urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}{path}',
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  return json.load(resp)
+
+          meta = {'runs': {}, 'artifacts': {}}
+          for model, run_id in runs.items():
+              run = api(f'/actions/runs/{run_id}')
+              if run.get('status') != 'completed' or run.get('conclusion') != 'success':
+                  raise SystemExit(f'{model}: run {run_id} no está verde completo')
+              meta['runs'][model] = {
+                  'run_id': run_id,
+                  'workflow': run.get('name'),
+                  'head_sha': run.get('head_sha'),
+                  'created_at': run.get('created_at'),
+                  'updated_at': run.get('updated_at'),
+              }
+
+              jobs = api(f'/actions/runs/{run_id}/jobs?per_page=100').get('jobs', [])
+              if model in ('gfs', 'ecmwf'):
+                  final_jobs = [j for j in jobs if j.get('name', '').startswith('Ensamblar')]
+                  if len(final_jobs) != 1 or final_jobs[0].get('conclusion') != 'success':
+                      raise SystemExit(f'{model}: job final de ensamblado no está verde')
+              else:
+                  final_jobs = [j for j in jobs if j.get('name') == 'assemble']
+                  if len(final_jobs) != 1 or final_jobs[0].get('conclusion') != 'success':
+                      raise SystemExit('ICON-EU: job assemble no está verde')
+                  steps = final_jobs[0].get('steps') or []
+                  guard = [s for s in steps if s.get('name') == 'Validar candidato completo 1488/1488']
+                  if len(guard) != 1 or guard[0].get('conclusion') != 'success':
+                      raise SystemExit('ICON-EU: validación explícita 1488/1488 no está verde')
+
+          required = {
+              'gfs': 'vnext-gfs-full-resumen-y-muestras',
+              'ecmwf': 'vnext-ecmwf-full-resumen-y-muestras',
+              'icon_eu': 'vnext-icon-eu-full-candidate',
+          }
+          for model, artifact_name in required.items():
+              run_id = runs[model]
+              arts = api(f'/actions/runs/{run_id}/artifacts?per_page=100').get('artifacts', [])
+              matches = [a for a in arts if a.get('name') == artifact_name and not a.get('expired')]
+              if len(matches) != 1:
+                  raise SystemExit(f'{model}: no está disponible {artifact_name}')
+              a = matches[0]
+              if int(a.get('size_in_bytes') or 0) <= 0:
+                  raise SystemExit(f'{model}: artefacto vacío')
+              if model == 'icon_eu' and int(a.get('size_in_bytes') or 0) < 100_000_000:
+                  raise SystemExit('ICON-EU: candidato completo sospechosamente pequeño')
+              meta['artifacts'][model] = {
+                  'id': a.get('id'),
+                  'name': a.get('name'),
+                  'size_in_bytes': a.get('size_in_bytes'),
+                  'digest': a.get('digest'),
+                  'expires_at': a.get('expires_at'),
+              }
+
+          out = Path('vnext-three-model-gate')
+          out.mkdir(parents=True, exist_ok=True)
+          (out / 'source-meta.json').write_text(
+              json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          print('Jobs finales y artefactos candidatos: OK')
+          PY
+
+      - name: Descargar resumen GFS validado
+        uses: actions/download-artifact@v4
+        with:
+          name: vnext-gfs-full-resumen-y-muestras
+          path: summaries/gfs
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.runs.outputs.gfs }}
+
+      - name: Descargar resumen ECMWF validado
+        uses: actions/download-artifact@v4
+        with:
+          name: vnext-ecmwf-full-resumen-y-muestras
+          path: summaries/ecmwf
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.runs.outputs.ecmwf }}
+
+      - name: Validar 9.770 mapas y construir gate de integración
+        env:
+          GFS_RUN: ${{ steps.runs.outputs.gfs }}
+          ECMWF_RUN: ${{ steps.runs.outputs.ecmwf }}
+          ICON_RUN: ${{ steps.runs.outputs.icon }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          expected = {'gfs': 5154, 'ecmwf': 3128}
+          for model, count in expected.items():
+              root = Path('summaries') / model
+              reports = list(root.rglob('report.json'))
+              currents = list(root.rglob('current-candidate.json'))
+              if len(reports) != 1 or len(currents) != 1:
+                  raise SystemExit(f'{model}: resumen ambiguo/incompleto')
+              report = json.loads(reports[0].read_text(encoding='utf-8'))
+              current = json.loads(currents[0].read_text(encoding='utf-8'))
+              if report.get('status') != 'ok' or report.get('maps') != count:
+                  raise SystemExit(f'{model}: report no acredita {count} mapas')
+              if report.get('production_changed') is not False:
+                  raise SystemExit(f'{model}: el candidato declara cambios en producción')
+              if current.get('status') != 'ready' or current.get('file_count') != count:
+                  raise SystemExit(f'{model}: current-candidate no acredita {count} mapas')
+
+          out = Path('vnext-three-model-gate')
+          source = json.loads((out / 'source-meta.json').read_text(encoding='utf-8'))
+          gate = {
+              'schema': 'vnext-three-model-gate-1',
+              'status': 'ready',
+              'generated_at_utc': datetime.now(timezone.utc).isoformat(),
+              'production_changed': False,
+              'total_maps': 9770,
+              'models': {
+                  'gfs': {
+                      'maps': 5154,
+                      'horizon_hours': 384,
+                      'run_id': int(os.environ['GFS_RUN']),
+                      'artifact': source['artifacts']['gfs'],
+                  },
+                  'ecmwf': {
+                      'maps': 3128,
+                      'horizon_hours': 360,
+                      'run_id': int(os.environ['ECMWF_RUN']),
+                      'artifact': source['artifacts']['ecmwf'],
+                  },
+                  'icon_eu': {
+                      'maps': 1488,
+                      'horizon_hours': 120,
+                      'run_id': int(os.environ['ICON_RUN']),
+                      'validation': 'assemble + Validar candidato completo 1488/1488',
+                      'artifact': source['artifacts']['icon_eu'],
+                  },
+              },
+              'next_step': 'publication-candidate',
+              'protection': [
+                  'NO publica GitHub Pages',
+                  'NO cambia current.json real',
+                  'NO modifica WordPress',
+              ],
+          }
+          if sum(x['maps'] for x in gate['models'].values()) != 9770:
+              raise SystemExit('Suma total distinta de 9.770')
+          (out / 'integration-gate.json').write_text(
+              json.dumps(gate, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          print('GATE 3 MODELOS OK · 9.770 mapas · sin publicar')
+          PY
+
+      - name: Subir informe del gate
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-three-model-gate
+          path: vnext-three-model-gate/
+          retention-days: 7
+
+      - name: Protección de producción
+        run: |
+          echo 'NO PUBLICA Pages.'
+          echo 'NO cambia current.json real.'
+          echo 'NO modifica WordPress.'
+          echo 'Siguiente paso, solo si queda verde: candidato de publicación de los 3 modelos.'
