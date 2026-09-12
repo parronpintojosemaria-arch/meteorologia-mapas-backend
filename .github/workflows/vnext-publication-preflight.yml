@@ -1,0 +1,290 @@
+name: vNext · Preflight publicación · 9.770 mapas · NO publica
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - '.github/workflows/vnext-publication-preflight.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vnext-publication-preflight-no-production
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Medir · diseñar shards · comprobar destinos · NO publicar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Localizar el gate verde de 9.770 mapas
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/vnext-three-model-gate.yml/runs?branch=vnext-mapas-profesional&status=success&per_page=20"
+          run_id=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api" | python -c "import json,sys; d=json.load(sys.stdin); r=[x for x in d.get('workflow_runs',[]) if x.get('conclusion')=='success']; print(r[0]['id'] if r else '')")
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Gate fuente: $run_id"
+
+      - name: Descargar gate validado
+        uses: actions/download-artifact@v4
+        with:
+          name: vnext-three-model-gate
+          path: gate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.gate.outputs.run_id }}
+
+      - name: Leer runs fuente del gate
+        id: source
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=next(Path('gate').rglob('integration-gate.json'))
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['status']=='ready' and d['total_maps']==9770 and d['production_changed'] is False
+          for key in ('gfs','ecmwf','icon_eu'):
+              print(key,d['models'][key]['run_id'])
+          with open('runs.env','w',encoding='utf-8') as f:
+              f.write(f"GFS_RUN={d['models']['gfs']['run_id']}\n")
+              f.write(f"ECMWF_RUN={d['models']['ecmwf']['run_id']}\n")
+              f.write(f"ICON_RUN={d['models']['icon_eu']['run_id']}\n")
+          PY
+          cat runs.env >> "$GITHUB_ENV"
+          echo "gfs=$(grep '^GFS_RUN=' runs.env | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          echo "ecmwf=$(grep '^ECMWF_RUN=' runs.env | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          echo "icon=$(grep '^ICON_RUN=' runs.env | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Descargar resumen GFS
+        uses: actions/download-artifact@v4
+        with:
+          name: vnext-gfs-full-resumen-y-muestras
+          path: summary/gfs
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.source.outputs.gfs }}
+
+      - name: Descargar resumen ECMWF
+        uses: actions/download-artifact@v4
+        with:
+          name: vnext-ecmwf-full-resumen-y-muestras
+          path: summary/ecmwf
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.source.outputs.ecmwf }}
+
+      - name: Descargar candidato ICON-EU para medir tamaño real
+        uses: actions/download-artifact@v4
+        with:
+          name: vnext-icon-eu-full-candidate
+          path: icon-candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.source.outputs.icon }}
+
+      - name: Construir plan de publicación sin tocar producción
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          MIB=1024*1024
+          GUARD_MIB=940.0
+          owner=os.environ['GITHUB_REPOSITORY'].split('/')[0]
+          token=os.environ['GH_TOKEN']
+
+          def one(root,name):
+              rows=list(Path(root).rglob(name))
+              if len(rows)!=1:
+                  raise SystemExit(f'{root}: se esperaba un {name}, hay {len(rows)}')
+              return rows[0]
+
+          def load(root,name):
+              return json.loads(one(root,name).read_text(encoding='utf-8'))
+
+          gfs_report=load('summary/gfs','report.json')
+          gfs_manifest=load('summary/gfs','manifest.json')
+          gfs_current=load('summary/gfs','current-candidate.json')
+          ecmwf_report=load('summary/ecmwf','report.json')
+          ecmwf_manifest=load('summary/ecmwf','manifest.json')
+          ecmwf_current=load('summary/ecmwf','current-candidate.json')
+
+          assert gfs_report['status']=='ok' and gfs_report['maps']==5154 and gfs_report['production_changed'] is False
+          assert ecmwf_report['status']=='ok' and ecmwf_report['maps']==3128 and ecmwf_report['production_changed'] is False
+          assert gfs_current['status']=='ready' and gfs_current['file_count']==5154
+          assert ecmwf_current['status']=='ready' and ecmwf_current['file_count']==3128
+          assert len(gfs_manifest['files'])==5154
+          assert len(ecmwf_manifest['files'])==3128
+
+          def domain_sizes(manifest):
+              out={}
+              for row in manifest['files']:
+                  d=row['domain']
+                  rec=out.setdefault(d,{'files':0,'bytes':0})
+                  rec['files']+=1
+                  rec['bytes']+=int(row['bytes'])
+              for rec in out.values():
+                  rec['mib']=round(rec['bytes']/MIB,2)
+              return out
+
+          gfs_domains=domain_sizes(gfs_manifest)
+          ecmwf_domains=domain_sizes(ecmwf_manifest)
+
+          icon_webps=list(Path('icon-candidate').rglob('*.webp'))
+          if len(icon_webps)!=1488:
+              raise SystemExit(f'ICON-EU: {len(icon_webps)} webp, esperados 1488')
+          icon_bytes=sum(p.stat().st_size for p in icon_webps)
+          icon_mib=round(icon_bytes/MIB,2)
+          if icon_mib>=GUARD_MIB:
+              raise SystemExit(f'ICON-EU supera guard de {GUARD_MIB} MiB: {icon_mib}')
+
+          # GFS completo NO cabe bajo el guard ya calculado por su ensamblador.
+          if gfs_report.get('fits_single_model_pages_repo') is not False:
+              raise SystemExit('GFS: se esperaba que el full requiriera sharding')
+          if float(gfs_report['image_mib'])<=GUARD_MIB:
+              raise SystemExit('GFS: report inconsistente con guard')
+          # ECMWF sí cabe como un sitio/modelo independiente.
+          if ecmwf_report.get('fits_single_model_pages_repo') is not True:
+              raise SystemExit('ECMWF: el report no acredita sitio único')
+          if float(ecmwf_report['image_mib'])>=GUARD_MIB:
+              raise SystemExit('ECMWF: supera guard aunque report diga que cabe')
+
+          def api_json(url):
+              req=urllib.request.Request(url,headers={
+                  'Authorization':f'Bearer {token}',
+                  'Accept':'application/vnd.github+json',
+                  'X-GitHub-Api-Version':'2022-11-28',
+              })
+              with urllib.request.urlopen(req,timeout=60) as r:
+                  return json.load(r)
+
+          # Metadatos de artefactos GFS: sus tres grupos ya son shards naturales.
+          artifacts=api_json(f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GFS_RUN"]}/artifacts?per_page=100')['artifacts']
+          by_name={a['name']:a for a in artifacts if not a.get('expired')}
+          gfs_shards={}
+          for group in ('surface','lower','upper'):
+              name=f'vnext-gfs-full-{group}'
+              a=by_name.get(name)
+              if not a:
+                  raise SystemExit(f'GFS: falta artefacto {name}')
+              gfs_shards[group]={
+                  'source_artifact':name,
+                  'artifact_size_mib':round(int(a['size_in_bytes'])/MIB,2),
+                  'digest':a.get('digest'),
+                  'expires_at':a.get('expires_at'),
+              }
+
+          targets={
+              'gfs_surface':f'{owner}/meteorologia-mapas-gfs-surface',
+              'gfs_lower':f'{owner}/meteorologia-mapas-gfs-lower',
+              'gfs_upper':f'{owner}/meteorologia-mapas-gfs-upper',
+              'ecmwf':f'{owner}/meteorologia-mapas-ecmwf',
+              'icon_eu':f'{owner}/meteorologia-mapas-icon-eu',
+          }
+          target_status={}
+          for key,repo in targets.items():
+              try:
+                  r=api_json(f'https://api.github.com/repos/{repo}')
+                  target_status[key]={'repo':repo,'exists':True,'private':bool(r.get('private')),'default_branch':r.get('default_branch')}
+              except urllib.error.HTTPError as exc:
+                  if exc.code==404:
+                      target_status[key]={'repo':repo,'exists':False}
+                  else:
+                      raise
+
+          missing=[v['repo'] for v in target_status.values() if not v['exists']]
+          status='ready_for_publication_candidate' if not missing else 'requires_target_repository_setup'
+
+          plan={
+              'schema':'vnext-publication-preflight-1',
+              'status':status,
+              'generated_at_utc':datetime.now(timezone.utc).isoformat(),
+              'production_changed':False,
+              'total_maps':9770,
+              'pages_guard_mib':GUARD_MIB,
+              'gfs':{
+                  'maps':5154,
+                  'image_mib':gfs_report['image_mib'],
+                  'fits_single_repo':False,
+                  'domain_sizes':gfs_domains,
+                  'publication_architecture':'3 shards naturales: surface / lower / upper',
+                  'shards':gfs_shards,
+                  'router_required':True,
+                  'old_single_base_url':gfs_current['cycle_url'].split('/cycles/')[0],
+              },
+              'ecmwf':{
+                  'maps':3128,
+                  'image_mib':ecmwf_report['image_mib'],
+                  'fits_single_repo':True,
+                  'domain_sizes':ecmwf_domains,
+                  'current_candidate':ecmwf_current,
+              },
+              'icon_eu':{
+                  'maps':1488,
+                  'measured_image_mib':icon_mib,
+                  'fits_single_repo':True,
+              },
+              'targets':target_status,
+              'missing_target_repositories':missing,
+              'next_step':(
+                  'create-target-repositories-and-build-sharded-gfs-router'
+                  if missing else 'build-publication-candidate-without-switching-wordpress'
+              ),
+              'protection':[
+                  'NO publica GitHub Pages',
+                  'NO cambia current.json real',
+                  'NO modifica WordPress',
+                  'NO reduce resolución ni calidad',
+              ],
+          }
+          out=Path('vnext-publication-preflight')
+          out.mkdir(parents=True,exist_ok=True)
+          (out/'publication-plan.json').write_text(json.dumps(plan,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps({
+              'status':status,
+              'gfs_mib':gfs_report['image_mib'],
+              'ecmwf_mib':ecmwf_report['image_mib'],
+              'icon_eu_mib':icon_mib,
+              'missing_targets':missing,
+          },ensure_ascii=False,indent=2))
+          PY
+
+      - name: Subir plan de publicación
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-publication-preflight
+          path: vnext-publication-preflight/
+          retention-days: 7
+
+      - name: Protección final
+        run: |
+          echo 'PREFLIGHT SOLAMENTE.'
+          echo 'NO se ha publicado ningún mapa.'
+          echo 'NO se ha cambiado la web.'
+          echo 'GFS se publicará fragmentado para conservar HD, no comprimiendo más.'
