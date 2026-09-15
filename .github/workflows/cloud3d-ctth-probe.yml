@@ -1,0 +1,50 @@
+name: Cloud3D CTTH · validar altura real de nubes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ctth-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EUMETSAT_CONSUMER_KEY: ${{ secrets.EUMETSAT_CONSUMER_KEY }}
+      EUMETSAT_CONSUMER_SECRET: ${{ secrets.EUMETSAT_CONSUMER_SECRET }}
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Instalar dependencias CTTH
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install eumdac netCDF4 numpy matplotlib
+
+      - name: Validar secretos EUMETSAT
+        shell: bash
+        run: |
+          if [ -z "$EUMETSAT_CONSUMER_KEY" ] || [ -z "$EUMETSAT_CONSUMER_SECRET" ]; then
+            echo "::error::Faltan EUMETSAT_CONSUMER_KEY y/o EUMETSAT_CONSUMER_SECRET en Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Descargar y comprobar MTG FCI-2-CTTH
+        run: python scripts/cloud3d_ctth_probe.py
+
+      - name: Publicar artefacto de control
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud3d-ctth-validacion
+          path: output/cloud3d-ctth/
+          if-no-files-found: warn
+          retention-days: 7
