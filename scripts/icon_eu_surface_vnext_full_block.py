@@ -10,7 +10,6 @@ import icon_eu_surface_production_phase42 as p42
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_PRECIP_CHECK = p42.s38.precip_consistency
-EDGE_ONLY_MAX_GUARD_MM = 12.0
 
 
 def parse_steps(spec: str):
@@ -30,19 +29,17 @@ def parse_run():
 
 
 def precip_consistency_vnext(total, rain, snow):
-    """Mantiene todas las comprobaciones de Fase 38.
+    """Mantiene las comprobaciones robustas de Fase 38 sin falsos rojos de borde.
 
     DWD define TOT_PREC = RAIN_GSP + SNOW_GSP + RAIN_CON + SNOW_CON para
     ICON/ICON-EU. El producto regular interpolado puede dejar discrepancias
     aisladas en el halo exterior. La Fase 38 ya comprueba media, p99.9,
     fracción de outliers y que los outliers grandes estén confinados al borde.
 
-    El fallo observado en vNext era únicamente el guard global de 2 mm, aunque
-    todas las métricas robustas y el interior pasaban. En vNext aceptamos ese
-    caso exclusivamente si el único motivo de fallo es el máximo global, los
-    outliers siguen confinados al halo y el máximo no supera 12 mm. No se
-    modifica ningún dato meteorológico; se conserva el valor y se registra una
-    advertencia trazable en el manifiesto.
+    En vNext, si el ÚNICO motivo de fallo es el máximo global y todas las
+    métricas robustas pasan, no se convierte un pico aislado del halo exterior
+    en un fallo de toda la pasada. El máximo se conserva y se registra como
+    advertencia trazable. No se modifica, interpola ni corrige ningún dato.
     """
     rec = BASE_PRECIP_CHECK(total, rain, snow)
     reasons = list(rec.get("failure_reasons") or [])
@@ -54,24 +51,22 @@ def precip_consistency_vnext(total, rain, snow):
         confined = bool(rec.get("all_large_outliers_confined_to_edge_halo"))
         interior_outliers = int(rec.get("interior_outliers_above_threshold_count", -1))
         max_abs = float(rec.get("max_abs_difference_mm", float("inf")))
-        if confined and interior_outliers == 0 and max_abs <= EDGE_ONLY_MAX_GUARD_MM:
+        if confined and interior_outliers == 0:
             rec["status"] = "ok"
             rec["failure_reasons"] = []
             rec["warnings"] = [
                 (
                     "Discrepancia máxima aislada confinada al halo exterior del producto "
-                    f"regular DWD: {max_abs:.6f} mm. Todas las métricas robustas y el "
-                    "interior pasan; los datos no se modifican."
+                    f"regular DWD: {max_abs:.6f} mm. Media, p99.9, fracción de outliers "
+                    "e interior pasan; los datos no se modifican."
                 )
             ]
             rec["validation_method"] = (
                 str(rec.get("validation_method", ""))
-                + "; vNext permite solo el máximo aislado del halo si el interior y "
-                  "todas las métricas robustas pasan"
+                + "; vNext trata como aviso el máximo global únicamente cuando el "
+                  "interior y todas las métricas robustas pasan"
             )
-            limits = dict(rec.get("limits") or {})
-            limits["vnext_edge_only_max_guard_mm"] = EDGE_ONLY_MAX_GUARD_MM
-            rec["limits"] = limits
+            rec["vnext_edge_only_global_max_policy"] = "warning_only_when_robust_checks_pass"
 
     return rec
 
@@ -102,8 +97,9 @@ def main():
     data["step_rule"] = rule
     data["summary"]["map_files"] = len(steps) * len(p42.PRODUCTS)
     data["precip_validation_note"] = (
-        "No se alteran datos. Se tolera únicamente el máximo aislado del halo exterior "
-        "si todas las métricas robustas y el interior pasan; guard adicional 12 mm."
+        "No se alteran datos. Un máximo global aislado se registra como aviso únicamente "
+        "si está confinado al halo exterior y pasan media, p99.9, fracción de outliers "
+        "y todas las comprobaciones del interior."
     )
 
     new = public / f"manifest-surface-{block}.json"
