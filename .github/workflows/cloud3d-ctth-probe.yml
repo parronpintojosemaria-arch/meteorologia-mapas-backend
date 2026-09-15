@@ -2,6 +2,12 @@ name: Cloud3D CTTH · validar altura real de nubes
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - cloud3d-ctth
+    paths:
+      - 'scripts/cloud3d_ctth_probe.py'
+      - '.github/workflows/cloud3d-ctth-probe.yml'
 
 permissions:
   contents: read
