@@ -1,0 +1,28 @@
+name: Meteorología IA · Contrato microclimático
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - meteorologia-ia-microclima
+    paths:
+      - 'vnext/config/microclimate_features.json'
+      - 'scripts/validate_microclimate_feature_contract.py'
+      - '.github/workflows/meteorologia-ia-microclima-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validar variables físicas y trazabilidad
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: meteorologia-ia-microclima
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validar contrato
+        run: python scripts/validate_microclimate_feature_contract.py
