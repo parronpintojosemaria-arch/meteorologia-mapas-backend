@@ -31,37 +31,68 @@ def fetch_rows(url):
 def obs_series(rows,index_key):
     out=[]
     for r in rows:
-        d=date(int(r["year"]),int(r["month"]),int(r["day"]))
-        out.append({"date":d.isoformat(),"value":round(float(r[index_key]),4)})
+        raw=(r.get(index_key) or "").strip()
+        if not raw:
+            continue
+        try:
+            value=float(raw)
+            d=date(int(r["year"]),int(r["month"]),int(r["day"]))
+        except (TypeError,ValueError):
+            continue
+        if not np.isfinite(value):
+            continue
+        out.append({"date":d.isoformat(),"value":round(value,4)})
+    if len(out)<120:
+        raise RuntimeError(f"observaciones válidas insuficientes para {index_key}: {len(out)}")
     return out[-120:]
 
 
 def gfs_latest(rows):
-    latest=max(r["time"] for r in rows)
+    key="ao_index" if rows and "ao_index" in rows[0] else "nao_index"
+    valid=[r for r in rows if (r.get("time") or "").strip() and (r.get(key) or "").strip()]
+    if not valid:
+        raise RuntimeError(f"GFS sin valores válidos para {key}")
+    latest=max(r["time"] for r in valid)
     out=[]
-    for r in rows:
+    for r in valid:
         if r["time"]!=latest:
             continue
+        try:
+            value=float(r[key])
+            lead=int(r["lead"])
+        except (TypeError,ValueError):
+            continue
+        if not np.isfinite(value):
+            continue
         out.append({
-          "lead_days":int(r["lead"]),
+          "lead_days":lead,
           "init_date":r["time"],
           "valid_date":r["valid_time"],
-          "value":round(float(r["ao_index"] if "ao_index" in r else r["nao_index"]),4)
+          "value":round(value,4)
         })
     out.sort(key=lambda x:x["lead_days"])
     return latest,out
 
 
 def gefs_latest(rows):
-    latest=max(r["time"] for r in rows)
+    key="ao_index" if rows and "ao_index" in rows[0] else "nao_index"
+    valid=[r for r in rows if (r.get("time") or "").strip() and (r.get(key) or "").strip()]
+    if not valid:
+        raise RuntimeError(f"GEFS sin valores válidos para {key}")
+    latest=max(r["time"] for r in valid)
     groups=defaultdict(list)
     valid_dates={}
-    for r in rows:
+    for r in valid:
         if r["time"]!=latest:
             continue
-        lead=int(r["lead"])
-        key="ao_index" if "ao_index" in r else "nao_index"
-        groups[lead].append(float(r[key]))
+        try:
+            lead=int(r["lead"])
+            value=float(r[key])
+        except (TypeError,ValueError):
+            continue
+        if not np.isfinite(value):
+            continue
+        groups[lead].append(value)
         valid_dates[lead]=r["valid_time"]
     out=[]
     for lead in sorted(groups):
