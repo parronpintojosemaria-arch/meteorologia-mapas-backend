@@ -1,0 +1,111 @@
+{
+  "schema": "mi-hemispheric-ai-sources-1",
+  "status": "design",
+  "principles": {
+    "official_sources_first": true,
+    "no_fabrication": true,
+    "provenance_required": true,
+    "teleconnection_is_not_deterministic_local_forecast": true
+  },
+  "hemispheric": {
+    "polar_vortex": {
+      "provider": "NOAA Climate Prediction Center",
+      "products": [
+        "Northern Hemisphere polar vortex monitoring",
+        "Stratospheric analyses and forecasts",
+        "10 hPa geopotential / temperature / wind diagnostics",
+        "450 K polar vortex size where seasonally available"
+      ],
+      "official_pages": [
+        "https://www.cpc.ncep.noaa.gov/products/stratosphere/polar/polar.shtml",
+        "https://www.cpc.ncep.noaa.gov/products/stratosphere/strat_a_f/",
+        "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/ao_index.html"
+      ],
+      "analysis_targets": [
+        "vortex_strength",
+        "vortex_displacement",
+        "vortex_elongation",
+        "wave_1_signal",
+        "wave_2_signal",
+        "zonal_wind_60n_10hpa",
+        "temperature_polar_cap_10hpa",
+        "possible_ssw_signal"
+      ],
+      "warning": "No declarar SSW/DANA/impacto local sin criterios físicos y datos suficientes."
+    },
+    "ao": {
+      "provider": "NOAA Climate Prediction Center",
+      "official_page": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/ao_index.html",
+      "definition": "Índice diario AO basado en anomalías de altura geopotencial de 1000 hPa al norte de 20N proyectadas sobre el patrón AO.",
+      "products": ["observed", "GFS outlook", "ensemble mean outlook"],
+      "base_period": "1979-2000"
+    },
+    "nao": {
+      "provider": "NOAA Climate Prediction Center",
+      "official_page": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/pna/nao_index.html",
+      "definition": "Índice diario NAO basado en anomalías de altura geopotencial de 500 hPa proyectadas sobre el patrón NAO.",
+      "products": ["observed", "GFS outlook", "ensemble mean outlook"],
+      "base_period": "1950-2000"
+    }
+  },
+  "ai_forecast_models": {
+    "google_weathernext_3": {
+      "provider": "Google DeepMind / Google Research",
+      "role": "global_ai_forecast",
+      "access": ["Google Cloud Storage Zarr v3", "BigQuery", "Earth Engine"],
+      "allowlist_required": true,
+      "access_status": "user_reports_approved",
+      "forecast_horizon_hours": 360,
+      "initialization": "hourly",
+      "ensemble_members": 64,
+      "resolutions": {
+        "station_surface_deg": 0.05,
+        "gridded_surface_deg": 0.1,
+        "pressure_levels_deg": 0.25
+      },
+      "bigquery_tables": [
+        "weathernext_3_0_0_0p1deg",
+        "weathernext_3_0_0_0p05deg"
+      ],
+      "integration_rule": "No credentials in repository. Use GitHub secrets/workload identity when connection is enabled.",
+      "official_docs": [
+        "https://developers.google.com/weathernext",
+        "https://developers.google.com/weathernext/guides/access-forecast",
+        "https://developers.google.com/weathernext/guides/bigquery"
+      ]
+    },
+    "ecmwf_aifs": {
+      "provider": "ECMWF",
+      "role": "global_ai_forecast",
+      "model": "AIFS Single v2",
+      "ensemble_model": "AIFS ENS v2",
+      "open_data": true,
+      "forecast_horizon_hours": 360,
+      "runs_per_day": 4,
+      "grid_deg": 0.25,
+      "official_docs": [
+        "https://www.ecmwf.int/en/forecasts/dataset/aifs-machine-learning-data",
+        "https://www.ecmwf.int/en/forecasts/datasets/open-data"
+      ]
+    }
+  },
+  "meteorologia_ia_stack": {
+    "large_scale_inputs": [
+      "ECMWF IFS",
+      "NOAA GFS",
+      "DWD ICON-EU",
+      "Google WeatherNext 3",
+      "ECMWF AIFS"
+    ],
+    "hemispheric_inputs": [
+      "NOAA CPC Polar Vortex",
+      "NOAA CPC AO",
+      "NOAA CPC NAO"
+    ],
+    "local_learning_layer": {
+      "phase_1": "physics + rules + model comparison",
+      "phase_2": "gradient-boosted local bias correction",
+      "phase_3": "spatiotemporal ML/downscaling after sufficient verified history"
+    }
+  }
+}
