@@ -1,0 +1,78 @@
+name: Análisis oficial · Variables avanzadas
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - 'scripts/vnext_analysis_official_rich_smoke.py'
+      - '.github/workflows/vnext-analysis-official-rich-smoke.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: analysis-official-rich-smoke
+  cancel-in-progress: true
+
+jobs:
+  rich:
+    name: Validar humedad omega CAPE y dinámica · 3 modelos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    steps:
+      - name: Checkout backend vNext
+        uses: actions/checkout@v4
+        with:
+          ref: vnext-mapas-profesional
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compilar pruebas
+        run: |
+          python -m py_compile scripts/vnext_analysis_official_smoke.py
+          python -m py_compile scripts/vnext_analysis_official_rich_smoke.py
+
+      - name: Base oficial directa
+        timeout-minutes: 165
+        run: python scripts/vnext_analysis_official_smoke.py
+
+      - name: Variables avanzadas oficiales
+        timeout-minutes: 120
+        run: python scripts/vnext_analysis_official_rich_smoke.py
+
+      - name: Validar contrato avanzado
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('vnext-analysis-official-rich-smoke/analysis-official-rich-smoke.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d['status']=='ok', d
+          assert d['rules']['no_open_meteo'] is True, d
+          assert set(d['models'])=={'ecmwf','gfs','icon_eu'}, d['models'].keys()
+          for name in ('gfs','ecmwf','icon_eu'):
+              f=d['models'][name]['fields']
+              assert f['relative_humidity_700hpa']['value'] is not None, (name,'RH700')
+              assert f['vertical_velocity_700hpa']['value'] is not None, (name,'VV700')
+          print('ANÁLISIS OFICIAL AVANZADO OK · RH/omega directos · sin Open-Meteo')
+          PY
+
+      - name: Subir pruebas trazables
+        uses: actions/upload-artifact@v4
+        with:
+          name: analisis-oficial-avanzado
+          path: |
+            vnext-analysis-official-smoke/analysis-official-smoke.json
+            vnext-analysis-official-rich-smoke/analysis-official-rich-smoke.json
+          retention-days: 7
