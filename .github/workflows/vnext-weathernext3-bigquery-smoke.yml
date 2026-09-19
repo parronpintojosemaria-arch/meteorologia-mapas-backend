@@ -2,18 +2,16 @@ name: Mapas IA · WeatherNext 3 BigQuery smoke
 
 on:
   workflow_dispatch:
-    inputs:
-      google_project_id:
-        description: 'Google Cloud project con el dataset enlazado de WeatherNext 3'
-        required: true
-        type: string
-      google_dataset_id:
-        description: 'Dataset local enlazado desde WeatherNext 3 Analytics Hub'
-        required: true
-        type: string
+  push:
+    branches:
+      - vnext-mapas-ai-models
+    paths:
+      - 'scripts/vnext_weathernext3_bigquery_smoke.py'
+      - '.github/workflows/vnext-weathernext3-bigquery-smoke.yml'
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   smoke:
@@ -21,8 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      WN3_PROJECT_ID: ${{ inputs.google_project_id }}
-      WN3_DATASET_ID: ${{ inputs.google_dataset_id }}
+      WN3_PROJECT_ID: handy-curve-446117-h8
+      WN3_DATASET_ID: weathernext_3
 
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +31,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Autenticar Google Cloud
+      - name: Autenticar Google Cloud por OIDC
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GOOGLE_CLOUD_CREDENTIALS }}
+          workload_identity_provider: projects/998845699164/locations/global/workloadIdentityPools/meteorologia-github/providers/github
+          service_account: meteorologia-github@handy-curve-446117-h8.iam.gserviceaccount.com
 
       - name: Dependencias
         run: pip install google-cloud-bigquery
@@ -57,7 +56,7 @@ jobs:
           assert d['checks']['long_horizon_found'] is True
           assert d['checks']['lead_hours']==[1,24,120,360]
           assert d['checks']['credentials_embedded'] is False
-          print('WEATHERNEXT 3 BIGQUERY OK · superficie real')
+          print('WEATHERNEXT 3 BIGQUERY OK · OIDC + superficie real')
           PY
 
       - uses: actions/upload-artifact@v4
