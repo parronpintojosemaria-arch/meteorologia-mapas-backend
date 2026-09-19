@@ -1,0 +1,180 @@
+{
+  "schema": "mi-microclimate-features-1",
+  "status": "design",
+  "principles": {
+    "no_fabrication": true,
+    "provenance_required": true,
+    "missing_is_null": true,
+    "static_dynamic_separation": true,
+    "multi_radius_context_km": [0.1, 1, 5, 10, 25, 50]
+  },
+  "sources": {
+    "copernicus_dem": {
+      "provider": "Copernicus",
+      "role": "terrain",
+      "products": ["GLO-30 where authorised/available", "GLO-90 fallback"],
+      "native_resolution_m": [30, 90]
+    },
+    "esa_worldcover": {
+      "provider": "ESA WorldCover",
+      "role": "land_cover",
+      "product": "WorldCover 2021 v200",
+      "native_resolution_m": 10
+    },
+    "copernicus_swi_europe": {
+      "provider": "Copernicus Land Monitoring Service",
+      "role": "soil_moisture",
+      "product": "Soil Water Index Europe v2",
+      "native_resolution_m": 1000,
+      "temporal": "daily"
+    },
+    "copernicus_marine_sst": {
+      "provider": "Copernicus Marine Service",
+      "role": "sea_surface_temperature",
+      "temporal": "near-real-time"
+    },
+    "official_nwp": {
+      "provider": ["ECMWF Open Data", "NOAA/NCEP NOMADS", "DWD Open Data", "Google WeatherNext"],
+      "role": "atmospheric_forcing"
+    }
+  },
+  "static_features": {
+    "terrain": [
+      "elevation_m",
+      "slope_deg",
+      "aspect_deg",
+      "relative_elevation_1km_m",
+      "relative_elevation_5km_m",
+      "relative_elevation_25km_m",
+      "valley_depth_index",
+      "ridge_exposure_index",
+      "terrain_ruggedness_index",
+      "topographic_position_index",
+      "sky_view_factor",
+      "horizon_angle_n",
+      "horizon_angle_ne",
+      "horizon_angle_e",
+      "horizon_angle_se",
+      "horizon_angle_s",
+      "horizon_angle_sw",
+      "horizon_angle_w",
+      "horizon_angle_nw"
+    ],
+    "water_geometry": [
+      "distance_to_coast_km",
+      "bearing_to_nearest_coast_deg",
+      "distance_to_ocean_km",
+      "distance_to_sea_km",
+      "distance_to_lake_km",
+      "nearest_lake_area_km2",
+      "distance_to_reservoir_km",
+      "distance_to_river_km",
+      "river_valley_orientation_deg"
+    ],
+    "land_cover": [
+      "built_fraction",
+      "tree_fraction",
+      "shrub_fraction",
+      "grass_fraction",
+      "cropland_fraction",
+      "bare_fraction",
+      "water_fraction",
+      "wetland_fraction",
+      "snow_ice_climatological_fraction",
+      "dominant_land_cover"
+    ],
+    "surface_physics": [
+      "albedo_climatology",
+      "emissivity",
+      "roughness_length_m",
+      "heat_capacity_class",
+      "thermal_conductivity_class",
+      "impervious_fraction",
+      "canopy_height_m",
+      "leaf_area_index_climatology",
+      "urban_density_index"
+    ]
+  },
+  "dynamic_features": {
+    "surface_state": [
+      "soil_water_index",
+      "soil_temperature_surface_c",
+      "soil_temperature_subsurface_c",
+      "snow_cover_fraction",
+      "snow_depth_cm",
+      "surface_albedo_dynamic",
+      "vegetation_index",
+      "leaf_area_index_dynamic",
+      "surface_wetness",
+      "rain_24h_mm",
+      "rain_72h_mm",
+      "rain_7d_mm"
+    ],
+    "water_state": [
+      "sea_surface_temperature_c",
+      "land_sea_temperature_contrast_c",
+      "lake_surface_temperature_c"
+    ],
+    "radiation_energy": [
+      "solar_elevation_deg",
+      "solar_azimuth_deg",
+      "potential_shortwave_wm2",
+      "terrain_shaded_shortwave_wm2",
+      "model_downward_shortwave_wm2",
+      "model_downward_longwave_wm2",
+      "net_radiation_wm2",
+      "sensible_heat_flux_wm2",
+      "latent_heat_flux_wm2"
+    ],
+    "boundary_layer": [
+      "boundary_layer_height_m",
+      "friction_velocity_ms",
+      "surface_wind_ms",
+      "surface_wind_direction_deg",
+      "stability_class",
+      "temperature_2m_c",
+      "dewpoint_2m_c",
+      "relative_humidity_2m_pct",
+      "mslp_hpa"
+    ]
+  },
+  "derived_microclimate_features": [
+    "maritime_influence_index",
+    "continentality_index",
+    "cold_air_pooling_potential",
+    "night_inversion_potential",
+    "solar_exposure_index",
+    "orographic_lift_potential",
+    "rain_shadow_potential",
+    "wind_channeling_potential",
+    "urban_heat_storage_potential",
+    "evaporative_cooling_potential",
+    "fog_potential",
+    "frost_potential"
+  ],
+  "learning_targets": [
+    "temperature_2m_bias_c",
+    "dewpoint_2m_bias_c",
+    "wind_speed_bias_ms",
+    "wind_direction_error_deg",
+    "precipitation_bias_mm",
+    "minimum_temperature_bias_c",
+    "maximum_temperature_bias_c",
+    "fog_occurrence",
+    "frost_occurrence"
+  ],
+  "record_contract": {
+    "required_metadata": [
+      "feature_name",
+      "value",
+      "units",
+      "source",
+      "source_time",
+      "spatial_resolution",
+      "method",
+      "quality_flag"
+    ],
+    "method_values": ["direct", "derived_physics", "derived_gis", "learned"],
+    "quality_values": ["ok", "stale", "estimated", "missing"]
+  }
+}
