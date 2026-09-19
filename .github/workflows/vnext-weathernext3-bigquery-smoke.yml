@@ -1,0 +1,67 @@
+name: Mapas IA · WeatherNext 3 BigQuery smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      google_project_id:
+        description: 'Google Cloud project con el dataset enlazado de WeatherNext 3'
+        required: true
+        type: string
+      google_dataset_id:
+        description: 'Dataset local enlazado desde WeatherNext 3 Analytics Hub'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: WeatherNext 3 superficie · lectura real
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      WN3_PROJECT_ID: ${{ inputs.google_project_id }}
+      WN3_DATASET_ID: ${{ inputs.google_dataset_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vnext-mapas-ai-models
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Autenticar Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CLOUD_CREDENTIALS }}
+
+      - name: Dependencias
+        run: pip install google-cloud-bigquery
+
+      - name: Compilar
+        run: python -m py_compile scripts/vnext_weathernext3_bigquery_smoke.py
+
+      - name: Consultar WeatherNext 3
+        run: python scripts/vnext_weathernext3_bigquery_smoke.py
+
+      - name: Validar
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('vnext-weathernext3-bigquery-smoke/weathernext3-bigquery-smoke.json').read_text())
+          assert d['status']=='ok'
+          assert d['checks']['long_horizon_found'] is True
+          assert d['checks']['lead_hours']==[1,24,120,360]
+          assert d['checks']['credentials_embedded'] is False
+          print('WEATHERNEXT 3 BIGQUERY OK · superficie real')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weathernext3-bigquery-smoke
+          path: vnext-weathernext3-bigquery-smoke/weathernext3-bigquery-smoke.json
+          retention-days: 7
