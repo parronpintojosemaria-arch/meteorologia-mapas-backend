@@ -1,0 +1,30 @@
+name: Meteorología IA · Vórtice AO NAO y modelos IA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - meteorologia-ia-microclima
+    paths:
+      - 'vnext/config/hemispheric_ai_sources.json'
+      - 'scripts/validate_hemispheric_ai_sources.py'
+      - '.github/workflows/meteorologia-ia-hemisferica.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validar NOAA CPC + WeatherNext + AIFS
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: meteorologia-ia-microclima
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validar contrato y fuentes públicas
+        run: python scripts/validate_hemispheric_ai_sources.py
