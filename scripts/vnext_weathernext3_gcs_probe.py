@@ -19,9 +19,10 @@ BASE="weathernext_3_0_0_statistics/zarr/2026_to_present"
 
 
 def main():
-    credentials,_=google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    provider=GoogleCredentialProvider(credentials=credentials)
-    store=obstore.store.GCSStore(bucket=BUCKET,prefix=BASE,credential_provider=provider)
+    # El bucket de estadísticas se documenta sin Requester Pays.
+    # Probar acceso público/anónimo evita que una cuenta de servicio no allowlisted
+    # invalide una lectura que sí puede ser pública.
+    store=obstore.store.GCSStore(bucket=BUCKET,prefix=BASE,skip_signature=True)
     items=list(obstore.list(store))
     names=[]
     for item in items:
@@ -38,7 +39,7 @@ def main():
         raise RuntimeError("No se encontraron pasadas WeatherNext 3 en GCS statistics")
     run=runs[0]
     prefix=f"{BASE}/{run}/predictions.zarr"
-    gcs=obstore.store.GCSStore(bucket=BUCKET,prefix=prefix,credential_provider=provider)
+    gcs=obstore.store.GCSStore(bucket=BUCKET,prefix=prefix,skip_signature=True)
     ds=xr.open_zarr(zarr.storage.ObjectStore(gcs),chunks={})
     vars_=sorted(list(ds.data_vars))
     coords={k:{"size":int(v.size),"dtype":str(v.dtype)} for k,v in ds.coords.items()}
