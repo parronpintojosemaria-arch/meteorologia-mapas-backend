@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,8 +21,16 @@ BASE="weathernext_3_0_0_statistics/zarr/2026_to_present"
 
 def main():
     # El bucket de estadísticas se documenta sin Requester Pays.
-    # Probar acceso público/anónimo evita que una cuenta de servicio no allowlisted
-    # invalide una lectura que sí puede ser pública.
+    # Aislar credenciales OIDC del entorno para una prueba realmente anónima.
+    for key in (
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE",
+        "GOOGLE_GHA_CREDS_PATH",
+        "GOOGLE_SERVICE_ACCOUNT",
+        "GOOGLE_SERVICE_ACCOUNT_PATH",
+        "GOOGLE_SERVICE_ACCOUNT_KEY",
+    ):
+        os.environ.pop(key, None)
     store=obstore.store.GCSStore(bucket=BUCKET,prefix=BASE,skip_signature=True)
     items=list(obstore.list(store))
     names=[]
