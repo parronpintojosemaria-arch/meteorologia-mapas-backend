@@ -1,0 +1,69 @@
+name: Meteorología IA · Feed NOAA hemisférico
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - meteorologia-ia-microclima
+    paths:
+      - 'scripts/noaa_hemispheric_feed.py'
+      - '.github/workflows/noaa-hemispheric-feed.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: noaa-hemispheric-feed
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Construir AO NAO GEFS + vórtice 10 hPa
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: meteorologia-ia-microclima
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compilar
+        run: |
+          python -m py_compile scripts/noaa_hemispheric_smoke.py
+          python -m py_compile scripts/noaa_hemispheric_feed.py
+
+      - name: Construir feed
+        timeout-minutes: 165
+        run: python scripts/noaa_hemispheric_feed.py
+
+      - name: Validar
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('hemispheric-noaa-feed/current.json').read_text(encoding='utf-8'))
+          assert d['status']=='ok'
+          assert len(d['ao']['observed_120d'])==120
+          assert len(d['nao']['observed_120d'])==120
+          assert len(d['ao']['gfs_latest']['forecast'])>=15
+          assert len(d['nao']['gefs_latest']['forecast'])>=15
+          assert len(d['polar_vortex_10hpa']['forecast'])==16
+          assert d['rules']['no_open_meteo'] is True
+          assert d['rules']['teleconnections_not_local_deterministic_forecast'] is True
+          print('FEED NOAA OK · AO + NAO + GEFS + VÓRTICE 10 hPa')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noaa-hemispheric-feed
+          path: hemispheric-noaa-feed/current.json
+          retention-days: 7
