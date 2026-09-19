@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json
-import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import obstore
 import google.auth
+import obstore
 import xarray as xr
 import zarr
 from obstore.auth.google import GoogleCredentialProvider
@@ -19,59 +18,58 @@ BUCKET="weathernext3_statistics_spatial"
 BASE="weathernext_3_0_0_statistics/zarr/2026_to_present"
 
 
+def candidates():
+    now=datetime.now(timezone.utc)-timedelta(hours=1)
+    floor=now.replace(minute=0,second=0,microsecond=0)
+    # Statistics exists for every hourly init; try latest hours first.
+    return [floor-timedelta(hours=i) for i in range(36)]
+
+
 def main():
-    # El bucket de estadísticas se documenta sin Requester Pays.
-    # Aislar credenciales OIDC del entorno para una prueba realmente anónima.
-    for key in (
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE",
-        "GOOGLE_GHA_CREDS_PATH",
-        "GOOGLE_SERVICE_ACCOUNT",
-        "GOOGLE_SERVICE_ACCOUNT_PATH",
-        "GOOGLE_SERVICE_ACCOUNT_KEY",
-    ):
-        os.environ.pop(key, None)
-    store=obstore.store.GCSStore(bucket=BUCKET,prefix=BASE,skip_signature=True)
-    items=list(obstore.list(store))
-    names=[]
-    for item in items:
-        p=getattr(item,"path",None)
-        if p is None and isinstance(item,dict):
-            p=item.get("path")
-        if p:
-            names.append(str(p))
-    runs=sorted({
-        p.split("/",1)[0] for p in names
-        if "_preds/" in p and p.split("/",1)[0].endswith("_preds")
-    }, reverse=True)
-    if not runs:
-        raise RuntimeError("No se encontraron pasadas WeatherNext 3 en GCS statistics")
-    run=runs[0]
-    prefix=f"{BASE}/{run}/predictions.zarr"
-    gcs=obstore.store.GCSStore(bucket=BUCKET,prefix=prefix,skip_signature=True)
-    ds=xr.open_zarr(zarr.storage.ObjectStore(gcs),chunks={})
+    credentials,_=google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    provider=GoogleCredentialProvider(credentials=credentials)
+
+    errors=[]
+    opened=None
+    for dt in candidates():
+        run=f"{dt:%Y%m%d_%H}hr_01_preds"
+        prefix=f"{BASE}/{run}/predictions.zarr"
+        try:
+            gcs=obstore.store.GCSStore(bucket=BUCKET,prefix=prefix,credential_provider=provider)
+            ds=xr.open_zarr(zarr.storage.ObjectStore(gcs),chunks={})
+            # Force a tiny metadata-backed access so a false open cannot pass.
+            _=list(ds.data_vars)[:1]
+            opened=(run,prefix,ds)
+            break
+        except Exception as exc:
+            errors.append(f"{run}: {type(exc).__name__}: {exc}")
+
+    if opened is None:
+        raise RuntimeError("No se pudo abrir ruta directa WeatherNext GCS: "+" | ".join(errors[-6:]))
+
+    run,prefix,ds=opened
     vars_=sorted(list(ds.data_vars))
     coords={k:{"size":int(v.size),"dtype":str(v.dtype)} for k,v in ds.coords.items()}
+    required=[
+      "temperature_2m_mean",
+      "dewpoint_temperature_2m_mean",
+      "u_component_of_wind_10m_mean",
+      "v_component_of_wind_10m_mean",
+      "mean_sea_level_pressure_mean",
+      "total_cloud_cover_mean",
+      "total_precipitation_1hr_mean",
+      "surface_solar_radiation_downwards_1hr_mean"
+    ]
     report={
-      "schema":"mi-weathernext3-gcs-probe-1",
+      "schema":"mi-weathernext3-gcs-probe-2",
       "status":"ok",
       "bucket":BUCKET,
       "run_folder":run,
       "prefix":prefix,
       "data_vars":vars_,
       "coords":coords,
-      "required_surface_present":{
-        k:k in vars_ for k in [
-          "temperature_2m_mean",
-          "dewpoint_temperature_2m_mean",
-          "u_component_of_wind_10m_mean",
-          "v_component_of_wind_10m_mean",
-          "mean_sea_level_pressure_mean",
-          "total_cloud_cover_mean",
-          "total_precipitation_1hr_mean",
-          "surface_solar_radiation_downwards_1hr_mean"
-        ]
-      },
+      "required_surface_present":{k:k in vars_ for k in required},
+      "list_permission_required":False,
       "generated_at_utc":datetime.now(timezone.utc).isoformat()
     }
     (OUT/"probe.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
