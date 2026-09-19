@@ -1,0 +1,69 @@
+name: Meteorología IA · NOAA AO NAO Vórtice 10 hPa
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - meteorologia-ia-microclima
+    paths:
+      - 'scripts/noaa_hemispheric_smoke.py'
+      - '.github/workflows/noaa-hemispheric-smoke.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: noaa-hemispheric-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Validar AO NAO + GFS 10 hPa
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: meteorologia-ia-microclima
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compilar
+        run: python -m py_compile scripts/noaa_hemispheric_smoke.py
+
+      - name: Descargar NOAA y calcular vórtice
+        timeout-minutes: 135
+        run: python scripts/noaa_hemispheric_smoke.py
+
+      - name: Validar contrato
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('hemispheric-noaa-smoke/noaa-hemispheric-smoke.json').read_text(encoding='utf-8'))
+          assert d['status']=='ok'
+          assert d['checks']['ao_sources']==3
+          assert d['checks']['nao_sources']==3
+          assert d['checks']['polar_steps']==[0,120,240,360]
+          assert d['checks']['no_open_meteo'] is True
+          for k in ('f000','f120','f240','f360'):
+              m=d['polar_vortex'][k]['metrics']
+              assert -200 < m['zonal_mean_u_approx_60n_10hpa_ms'] < 200
+              assert -120 < m['polar_cap_60_90_temperature_c'] < 50
+          print('NOAA HEMISFÉRICO OK · AO/NAO + vórtice GFS 10 hPa')
+          PY
+
+      - name: Subir resultado
+        uses: actions/upload-artifact@v4
+        with:
+          name: noaa-hemispheric-smoke
+          path: hemispheric-noaa-smoke/noaa-hemispheric-smoke.json
+          retention-days: 7
