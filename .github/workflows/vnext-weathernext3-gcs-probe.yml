@@ -1,0 +1,52 @@
+name: Mapas IA · WeatherNext 3 GCS probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-ai-models
+    paths:
+      - 'scripts/vnext_weathernext3_gcs_probe.py'
+      - '.github/workflows/vnext-weathernext3-gcs-probe.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  probe:
+    name: Abrir WeatherNext 3 Zarr statistics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vnext-mapas-ai-models
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Autenticar Google Cloud por OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/998845699164/locations/global/workloadIdentityPools/meteorologia-github/providers/github
+          service_account: meteorologia-github@handy-curve-446117-h8.iam.gserviceaccount.com
+      - name: Dependencias
+        run: pip install xarray zarr obstore numpy
+      - name: Probar GCS/Zarr WeatherNext 3
+        run: python scripts/vnext_weathernext3_gcs_probe.py
+      - name: Validar
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('vnext-weathernext3-gcs-probe/probe.json').read_text())
+          assert d['status']=='ok'
+          missing=[k for k,v in d['required_surface_present'].items() if not v]
+          assert not missing, missing
+          print('WEATHERNEXT 3 GCS STATS OK',d['run_folder'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weathernext3-gcs-probe
+          path: vnext-weathernext3-gcs-probe/probe.json
+          retention-days: 7
