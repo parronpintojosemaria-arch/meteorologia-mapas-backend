@@ -1,0 +1,68 @@
+name: Mapas IA · WeatherNext 3 superficie visual HD
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-ai-models
+    paths:
+      - 'scripts/vnext_weathernext3_surface_visual_smoke.py'
+      - '.github/workflows/vnext-weathernext3-surface-visual-smoke.yml'
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: vnext-weathernext3-surface-visual-smoke
+  cancel-in-progress: true
+
+jobs:
+  visual:
+    name: 12 mapas HD WeatherNext España/Europa
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vnext-mapas-ai-models
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Autenticar Google Cloud por OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/998845699164/locations/global/workloadIdentityPools/meteorologia-github/providers/github
+          service_account: meteorologia-github@handy-curve-446117-h8.iam.gserviceaccount.com
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install google-cloud-bigquery
+      - name: Compilar
+        run: python -m py_compile scripts/vnext_weathernext3_surface_visual_smoke.py
+      - name: Generar superficie WeatherNext
+        timeout-minutes: 45
+        run: python scripts/vnext_weathernext3_surface_visual_smoke.py
+      - name: Validar
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('vnext-weathernext3-surface-visual-smoke/manifest.json').read_text())
+          assert d['status']=='ok'
+          assert d['production_changed'] is False
+          assert d['checks']['maps']==12
+          assert d['query_bytes_processed'] <= d['query_cap_bytes']
+          assert {x['domain'] for x in d['files']}=={'spain','europe'}
+          for x in d['files']:
+              assert x['bytes']>512
+              assert x['width'] in (2400,2800)
+          print('WEATHERNEXT SURFACE VISUAL OK · 12 mapas HD')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weathernext3-surface-visual-smoke
+          path: vnext-weathernext3-surface-visual-smoke/
+          retention-days: 7
