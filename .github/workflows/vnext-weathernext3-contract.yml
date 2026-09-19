@@ -1,0 +1,28 @@
+name: Mapas IA · WeatherNext 3 contrato
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vnext-mapas-ai-models
+    paths:
+      - 'vnext/config/weathernext3_maps.json'
+      - 'scripts/validate_weathernext3_maps_contract.py'
+      - '.github/workflows/vnext-weathernext3-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validar estructura WeatherNext 3
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: vnext-mapas-ai-models
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validar contrato
+        run: python scripts/validate_weathernext3_maps_contract.py
