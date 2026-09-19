@@ -1,0 +1,69 @@
+{
+  "schema": "mi-weathernext3-maps-1",
+  "status": "prepared-awaiting-google-cloud-link",
+  "model": "Google WeatherNext 3",
+  "provider": "Google DeepMind / Google Research",
+  "role": "maps_model_ai",
+  "access": {
+    "primary_for_maps": "Google Cloud Storage Zarr v3",
+    "surface_statistics_optional": "BigQuery",
+    "allowlist": "required",
+    "user_access_status": "approved",
+    "github_auth_status": "not_configured",
+    "credentials_in_repo": false
+  },
+  "domains": ["spain", "europe"],
+  "horizon": {
+    "synoptic_6h_init_hours_utc": [0, 6, 12, 18],
+    "synoptic_max_lead_hours": 360,
+    "interim_hourly_max_lead_hours": 48,
+    "surface_timestep_hours": 1,
+    "pressure_timestep_hours": 6
+  },
+  "surface_resolution_deg": 0.1,
+  "station_head_resolution_deg": 0.05,
+  "pressure_resolution_deg": 0.25,
+  "surface_products": {
+    "temperature_2m": {"source": "temperature_2m", "units_source": "K", "units_display": "°C"},
+    "dewpoint_2m": {"source": "dewpoint_temperature_2m", "units_source": "K", "units_display": "°C"},
+    "wind_10m": {"source": ["u_component_of_wind_10m", "v_component_of_wind_10m"], "units_source": "m/s", "units_display": "km/h"},
+    "wind_100m": {"source": ["u_component_of_wind_100m", "v_component_of_wind_100m"], "units_source": "m/s", "units_display": "km/h"},
+    "mslp": {"source": "mean_sea_level_pressure", "units_source": "Pa", "units_display": "hPa"},
+    "sea_surface_temperature": {"source": "sea_surface_temperature", "units_source": "K", "units_display": "°C"},
+    "cloud_cover_total": {"source": "total_cloud_cover", "units_source": "fraction", "units_display": "%"},
+    "cloud_cover_high": {"source": "high_cloud_cover", "units_source": "fraction", "units_display": "%"},
+    "cloud_cover_medium": {"source": "medium_cloud_cover", "units_source": "fraction", "units_display": "%"},
+    "cloud_cover_low": {"source": "low_cloud_cover", "units_source": "fraction", "units_display": "%"},
+    "precipitation_1h_native": {"source": "total_precipitation_1hr", "units_source": "m", "units_display": "mm"},
+    "precipitation_1h_imerg": {"source": "imerg_tp_1hr", "units_source": "m", "units_display": "mm"},
+    "precipitation_1h_experimental": {"source": "experimental_tp_1hr", "units_source": "m", "units_display": "mm"},
+    "solar_global_1h": {"source": "surface_solar_radiation_downwards_1hr", "units_source": "J/m2", "units_display": "J/m²"},
+    "solar_direct_1h": {"source": "total_sky_direct_solar_radiation_at_surface_1hr", "units_source": "J/m2", "units_display": "J/m²"}
+  },
+  "pressure_levels_hpa": [925, 850, 700, 500, 300, 250, 200],
+  "pressure_fields": [
+    "geopotential",
+    "specific_humidity",
+    "temperature",
+    "u_component_of_wind",
+    "v_component_of_wind",
+    "vertical_velocity"
+  ],
+  "map_products": {
+    "pressure_analysis": "temperature + geopotential height",
+    "jet": "wind speed from U/V at 300/250/200 hPa",
+    "omega": "vertical velocity where useful in analysis; not mislabeled as precipitation"
+  },
+  "not_available_do_not_invent": [
+    "CAPE unless Google adds it to WeatherNext 3",
+    "CIN unless Google adds it to WeatherNext 3",
+    "relative_humidity on pressure levels unless derived transparently from published fields",
+    "snow accumulation unless a published WeatherNext 3 variable supports it"
+  ],
+  "official_docs": [
+    "https://developers.google.com/weathernext/guides/models",
+    "https://developers.google.com/weathernext/guides/access-forecast",
+    "https://developers.google.com/weathernext/guides/gcs",
+    "https://developers.google.com/weathernext/guides/bigquery"
+  ]
+}
