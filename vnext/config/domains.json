@@ -9,9 +9,9 @@
   },
   "europe": {
     "label": "Europa",
-    "bbox": {"west": -28.0, "south": 30.0, "east": 45.0, "north": 72.0},
+    "bbox": {"west": -40.0, "south": 22.0, "east": 60.0, "north": 76.0},
     "render_width": 2800,
     "target_dpi": 180,
-    "viewer_padding_px": 8
+    "viewer_padding_px": 0
   }
 }
