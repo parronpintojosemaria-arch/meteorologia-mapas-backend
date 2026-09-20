@@ -13,7 +13,7 @@ RAW_ROOT=ROOT/'.vnext-raw-ecmwf'; RAW_ROOT.mkdir(parents=True,exist_ok=True)
 STEPS=tuple(range(0,145,3))+tuple(range(150,361,6))
 PRECIP_STEPS=(3,6,9,12,18,24,36,48,60,72,96,120,144,192,240,288,336,360)
 LOWER_LEVELS=(925,850,700,500); UPPER_LEVELS=(300,250,200); JET_LEVELS=(300,250,200)
-SOURCE_CROP={'west':-30.0,'east':47.0,'south':28.0,'north':74.0}; G0=9.80665
+SOURCE_CROP={'west':-40.0,'east':60.0,'south':22.0,'north':76.0}; G0=9.80665
 SOURCE_ORDER={'prepare':('ecmwf','aws','google'),'surface':('ecmwf','aws','google'),'lower':('aws','google','ecmwf'),'upper':('google','aws','ecmwf')}
 
 def sha256_file(path:Path)->str:
