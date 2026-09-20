@@ -2,14 +2,6 @@ name: vNext · ECMWF HD España Europa · sin publicar
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - vnext-mapas-profesional
-    paths:
-      - 'scripts/vnext_ecmwf_candidate.py'
-      - 'scripts/vnext_current_guard.py'
-      - 'vnext/config/**'
-      - '.github/workflows/vnext-ecmwf-candidate.yml'
 
 jobs:
   ecmwf-vnext-candidate:
