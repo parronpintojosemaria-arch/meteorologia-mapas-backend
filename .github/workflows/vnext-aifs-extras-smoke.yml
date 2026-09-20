@@ -1,0 +1,53 @@
+name: vNext · AIFS extras · omega y nubosidad
+
+on:
+  push:
+    paths:
+      - '.github/workflows/vnext-aifs-extras-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extras:
+    name: Verificar omega + nubes + humedad AIFS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: pip install -r requirements.txt
+      - name: Verificar campos extra oficiales
+        run: |
+          python - <<'PY'
+          import sys
+          from datetime import datetime, timezone
+          sys.path.insert(0,'scripts')
+          import vnext_aifs_data as d
+          run=datetime(2026,9,20,6,tzinfo=timezone.utc)
+
+          p=d.RAW_ROOT/'extras_surface.grib2'
+          d.retrieve('prepare',run,12,'sfc',
+                     ['2d','100u','100v','lcc','mcc','hcc','tcw'],p,attempts=1)
+          ds=d.open_grib(p)
+          for key in ('2d','100u','100v','lcc','mcc','hcc','tcw'):
+              arr,units,b=d.grid(d.find_da(ds,{key}))
+              assert arr.ndim==2 and arr.size>1000
+              print('AIFS EXTRA SURFACE OK',key,arr.shape,units)
+          p.unlink(missing_ok=True)
+
+          p=d.RAW_ROOT/'extras_pl.grib2'
+          d.retrieve('prepare',run,12,'pl',['q','w'],p,levels=[925,850,700,500,300,250,200],attempts=1)
+          ds=d.open_grib(p)
+          for lev in (925,850,700,500,300,250,200):
+              for key in ('q','w'):
+                  arr,units,b=d.grid(d.find_da_level(ds,{key},lev),lev)
+                  assert arr.ndim==2 and arr.size>1000
+                  print('AIFS EXTRA PL OK',lev,key,arr.shape,units)
+          p.unlink(missing_ok=True)
+          print('AIFS EXTRAS OFICIALES OK')
+          PY
