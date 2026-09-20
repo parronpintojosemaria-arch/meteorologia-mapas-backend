@@ -7,8 +7,6 @@ on:
       - vnext-mapas-profesional
     paths:
       - 'scripts/vnext_current_guard.py'
-      - 'vnext/config/**'
-      - '.github/workflows/vnext-current-guard.yml'
 
 jobs:
   current-guard:
