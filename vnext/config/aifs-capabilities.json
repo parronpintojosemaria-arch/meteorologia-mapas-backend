@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "model": "aifs",
+  "model_label": "ECMWF AIFS Single v2",
+  "provider": "ECMWF Open Data",
+  "resolution": "0.25° disseminated grid (~31 km native N320)",
+  "runs_utc": [0, 6, 12, 18],
+  "forecast_step_hours": 6,
+  "horizon_hours": 360,
+  "pressure_levels_hpa": [925, 850, 700, 500, 300, 250, 200],
+  "surface_official": {
+    "temperature_2m": "2t",
+    "dewpoint_2m": "2d",
+    "wind_10m_u": "10u",
+    "wind_10m_v": "10v",
+    "wind_100m_u": "100u",
+    "wind_100m_v": "100v",
+    "mslp": "msl",
+    "surface_pressure": "sp",
+    "cloud_cover_total": "tcc",
+    "cloud_cover_low": "lcc",
+    "cloud_cover_medium": "mcc",
+    "cloud_cover_high": "hcc",
+    "precipitation_total": "tp",
+    "precipitation_convective": "cp",
+    "snowfall_water_equivalent": "sf",
+    "total_column_water": "tcw",
+    "shortwave_down": "ssrd",
+    "longwave_down": "strd",
+    "skin_temperature": "skt"
+  },
+  "pressure_level_official": {
+    "temperature": "t",
+    "geopotential": "z",
+    "wind_u": "u",
+    "wind_v": "v",
+    "specific_humidity": "q",
+    "vertical_velocity_omega": "w"
+  },
+  "unsupported_in_open_data": {
+    "precipitation_type": "No se publica ptype para AIFS Open Data; no fabricar.",
+    "precipitation_rate": "No se publica tprate para AIFS Open Data; no fabricar.",
+    "cape": "No aparece como campo AIFS Open Data; no etiquetar como oficial.",
+    "cin": "No aparece como campo AIFS Open Data; no etiquetar como oficial.",
+    "lifted_index": "No aparece como campo AIFS Open Data; no etiquetar como oficial."
+  },
+  "policy": {
+    "never_invent_missing_fields": true,
+    "derived_fields_must_be_labeled": true,
+    "official_and_derived_must_not_be_mixed": true
+  }
+}
