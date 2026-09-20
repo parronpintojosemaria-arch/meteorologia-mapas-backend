@@ -7,8 +7,6 @@ on:
       - vnext-mapas-profesional
     paths:
       - 'scripts/vnext_icon_eu_preflight.py'
-      - 'vnext/config/**'
-      - '.github/workflows/vnext-icon-eu-preflight.yml'
 
 permissions:
   contents: read
