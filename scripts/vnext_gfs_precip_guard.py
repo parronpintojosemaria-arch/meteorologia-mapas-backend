@@ -42,7 +42,7 @@ def total_precip(run, step):
     selected = []
     metas = []
     urls = []
-    for tag, left, right in (('west', 330, 359.999), ('east', 0, 47)):
+    for tag, left, right in (('west', 320, 359.999), ('east', 0, 60)):
         raw, url = P.download(run, step, 'lev_surface', 'var_APCP', tag, left, right)
         sel = raw.with_name(raw.stem + '_total.grib2')
         metas.append(S.select_total_apcp(raw, sel, step))
