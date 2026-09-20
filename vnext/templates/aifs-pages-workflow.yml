@@ -1,0 +1,205 @@
+name: vNext · ECMWF AIFS · 2.312 mapas
+
+on:
+  schedule:
+    - cron: '45 9 * * *'
+    - cron: '45 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-aifs-candidate
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Seleccionar pasada AIFS completa +360 h
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      cycle: ${{ steps.cycle.outputs.cycle }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Descargar backend vNext
+        run: |
+          git clone --depth 1 --branch vnext-mapas-profesional \
+            https://github.com/parronpintojosemaria-arch/meteorologia-mapas-backend.git backend
+      - name: Dependencias
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Compilar AIFS
+        working-directory: backend
+        run: |
+          python -m py_compile scripts/vnext_aifs_data.py
+          python -m py_compile scripts/vnext_aifs_generate.py
+          python -m py_compile scripts/vnext_aifs_assemble.py
+          python -m py_compile scripts/vnext_ecmwf_render.py
+          python -m py_compile scripts/vnext_current_guard.py
+      - name: Elegir ciclo AIFS completo
+        working-directory: backend
+        run: python scripts/vnext_aifs_generate.py prepare
+      - id: cycle
+        name: Exportar ciclo
+        working-directory: backend
+        shell: bash
+        run: |
+          CYCLE=$(python -c "import json;print(json.load(open('vnext-full-out/aifs/prep.json'))['cycle'])")
+          echo "cycle=$CYCLE" >> "$GITHUB_OUTPUT"
+          echo "AIFS ciclo seleccionado: $CYCLE"
+
+  generate:
+    name: Generar ${{ matrix.group }} · España 2400 · Europa 2800 · q92
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        group: [surface, lower, upper]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Descargar backend vNext
+        run: |
+          git clone --depth 1 --branch vnext-mapas-profesional \
+            https://github.com/parronpintojosemaria-arch/meteorologia-mapas-backend.git backend
+      - name: Dependencias
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Generar grupo completo
+        working-directory: backend
+        run: python scripts/vnext_aifs_generate.py "${{ matrix.group }}" --cycle "${{ needs.prepare.outputs.cycle }}"
+      - name: Guard del grupo
+        working-directory: backend
+        env:
+          GROUP: ${{ matrix.group }}
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          from PIL import Image
+          expected={'surface':848,'lower':732,'upper':732}
+          group=os.environ['GROUP'];cycle=os.environ['CYCLE']
+          root=Path('vnext-full-out/aifs/cycles')/cycle
+          m=json.loads((root/f'fragment-{group}.json').read_text())
+          assert m['model']=='aifs' and m['status']=='ready' and m['production_changed'] is False
+          assert m['expected_count']==expected[group] and len(m['files'])==expected[group]
+          widths={'spain':2400,'europe':2800}
+          for row in m['files']:
+              p=root/row['path']
+              assert p.is_file() and p.stat().st_size>100
+              assert row['width']==widths[row['domain']] and row['height']>900
+          for row in (m['files'][0],m['files'][len(m['files'])//2],m['files'][-1]):
+              with Image.open(root/row['path']) as im: im.verify()
+          print('AIFS GROUP OK',group,len(m['files']))
+          PY
+      - name: Subir grupo temporal
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-aifs-pages-${{ matrix.group }}
+          path: backend/vnext-full-out/aifs/cycles/${{ needs.prepare.outputs.cycle }}
+          retention-days: 1
+          compression-level: 1
+
+  build:
+    name: Ensamblar · validar 2.312 · preparar Pages
+    needs: [prepare, generate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Descargar backend vNext
+        run: |
+          git clone --depth 1 --branch vnext-mapas-profesional \
+            https://github.com/parronpintojosemaria-arch/meteorologia-mapas-backend.git backend
+      - name: Pillow
+        working-directory: backend
+        run: pip install --upgrade pillow
+      - name: Descargar grupos
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vnext-aifs-pages-*
+          path: backend/vnext-full-merged/aifs
+          merge-multiple: true
+      - name: Validación completa AIFS
+        working-directory: backend
+        run: python scripts/vnext_aifs_assemble.py
+      - name: Guard tamaño Pages
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('vnext-full-summary/aifs/report.json').read_text())
+          assert r['status']=='ok' and r['maps']==2312 and r['production_changed'] is False
+          assert r['fits_single_model_pages_repo'] is True
+          assert float(r['image_mib'])<940.0
+          print('AIFS PAGES OK · 2312 mapas ·',r['image_mib'],'MiB')
+          PY
+      - name: Preparar sitio
+        working-directory: backend
+        env:
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        shell: bash
+        run: |
+          mkdir -p "../site/cycles/$CYCLE"
+          cp -a vnext-full-merged/aifs/. "../site/cycles/$CYCLE/"
+          python scripts/vnext_current_guard.py \
+            --model aifs \
+            --cycle "$CYCLE" \
+            --cycle-dir vnext-full-merged/aifs \
+            --base-url 'https://parronpintojosemaria-arch.github.io/meteorologia-mapas-aifs' \
+            --output ../site/current.json
+          cat > ../site/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8"><title>Meteorología Interactiva · ECMWF AIFS</title>
+          <h1>Meteorología Interactiva · ECMWF AIFS Single v2</h1>
+          <p>Datos oficiales: ECMWF Open Data. 2.312 mapas, 0.25°, +360 h.</p>
+          <p><a href="current.json">current.json</a></p>
+          HTML
+          touch ../site/.nojekyll
+      - name: Guard final
+        env:
+          CYCLE: ${{ needs.prepare.outputs.cycle }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          c=json.loads(Path('site/current.json').read_text())
+          assert c['status']=='ready' and c['model']=='aifs' and c['file_count']==2312
+          assert c['cycle']==os.environ['CYCLE']
+          assert Path('site/cycles',c['cycle'],'manifest.json').is_file()
+          print('CURRENT AIFS OK',c['cycle'],c['file_count'])
+          PY
+      - uses: actions/configure-pages@v5
+      - name: Empaquetar Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+          retention-days: 1
+
+  deploy:
+    name: Publicar AIFS
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Desplegar Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
