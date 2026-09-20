@@ -14,8 +14,7 @@ on:
       - 'scripts/precip_type_intensity_phase30.py'
       - 'scripts/vnext_ecmwf_render.py'
       - 'scripts/vnext_current_guard.py'
-      - 'vnext/config/**'
-      - '.github/workflows/vnext-gfs-full.yml'
+      - 'vnext/config/domains.json'
 
 permissions:
   contents: read
