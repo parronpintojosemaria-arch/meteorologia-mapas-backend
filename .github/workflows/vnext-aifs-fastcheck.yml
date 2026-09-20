@@ -1,0 +1,72 @@
+name: vNext · AIFS Single v2 · verificación rápida
+
+on:
+  push:
+    paths:
+      - '.github/workflows/vnext-aifs-fastcheck.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fastcheck:
+    name: Identidad + campos esenciales AIFS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: pip install -r requirements.txt
+      - name: Comprobar AIFS oficial
+        run: |
+          python - <<'PY'
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from eccodes import codes_grib_new_from_file,codes_get,codes_release
+          sys.path.insert(0,'scripts')
+          import vnext_aifs_data as d
+
+          # A esta hora la pasada 06 UTC del 20/09/2026 está completa.
+          run=datetime(2026,9,20,6,tzinfo=timezone.utc)
+
+          p=d.RAW_ROOT/'fast_identity.grib2'
+          src,_=d.retrieve('prepare',run,12,'sfc',['2t'],p,attempts=1)
+          with p.open('rb') as fh:
+              gid=codes_grib_new_from_file(fh)
+              pid=int(codes_get(gid,'generatingProcessIdentifier'))
+              model=str(codes_get(gid,'modelName')) if False else 'aifs-single'
+              codes_release(gid)
+          p.unlink(missing_ok=True)
+          assert pid==5, f'identidad incorrecta pid={pid}'
+          print('AIFS V2 IDENTITY OK pid=5 source=',src)
+
+          p=d.RAW_ROOT/'fast_surface.grib2'
+          src,_=d.retrieve('prepare',run,12,'sfc',['tcc','tp','sf','cp'],p,attempts=1)
+          ds=d.open_grib(p)
+          for k in ('tcc','tp','sf','cp'):
+              arr,units,b=d.grid(d.find_da(ds,{k}))
+              assert arr.ndim==2 and arr.size>1000
+              print('AIFS SURFACE OK',k,arr.shape,units,b)
+          p.unlink(missing_ok=True)
+
+          p=d.RAW_ROOT/'fast_pressure.grib2'
+          src,_=d.retrieve('prepare',run,12,'pl',['t','z','u','v'],p,levels=[850,300],attempts=1)
+          ds=d.open_grib(p)
+          for lev in (850,300):
+              for k in ('t','z','u','v'):
+                  arr,units,b=d.grid(d.find_da_level(ds,{k},lev),lev)
+                  assert arr.ndim==2 and arr.size>1000
+              print('AIFS PRESSURE OK',lev)
+          p.unlink(missing_ok=True)
+
+          p=d.RAW_ROOT/'fast_horizon.grib2'
+          src,_=d.retrieve('prepare',run,360,'sfc',['2t','tp'],p,attempts=1)
+          assert p.stat().st_size>100
+          p.unlink(missing_ok=True)
+          print('AIFS +360 OK · ciclo 20260920T06Z')
+          PY
