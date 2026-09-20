@@ -11,8 +11,7 @@ on:
       - 'scripts/vnext_ecmwf_generate.py'
       - 'scripts/vnext_ecmwf_assemble.py'
       - 'scripts/vnext_current_guard.py'
-      - 'vnext/config/**'
-      - '.github/workflows/vnext-ecmwf-full.yml'
+      - 'vnext/config/domains.json'
 
 permissions:
   contents: read
