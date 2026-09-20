@@ -20,7 +20,7 @@ ROOT=Path(__file__).resolve().parents[1]
 RAW=ROOT/'.vnext-gfs-preflight-raw'; RAW.mkdir(parents=True,exist_ok=True)
 OUT=ROOT/'vnext-gfs-preflight-out'; OUT.mkdir(parents=True,exist_ok=True)
 BASE='https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl'
-SOURCE={'west':-30.0,'east':47.0,'south':28.0,'north':74.0}
+SOURCE={'west':-40.0,'east':60.0,'south':22.0,'north':76.0}
 STEPS=(0,384)
 PRODUCTS=('temperature_2m','wind_10m','cloud_cover_total','mslp','analysis_850hpa','analysis_300hpa','jet_300hpa')
 
@@ -79,7 +79,7 @@ def open_da(path,filter_keys=None):
 
 def retrieve(run,step,level,var,filter_keys=None):
     pieces=[]; urls=[]; paths=[]
-    for tag,left,right in (('west',330,359.999),('east',0,47)):
+    for tag,left,right in (('west',320,359.999),('east',0,60)):
         p,u=download(run,step,level,var,tag,left,right);paths.append(p);urls.append(u);pieces.append(open_da(p,filter_keys))
     da=xr.concat(pieces,dim='longitude').sortby('longitude')
     lon=np.asarray(da.longitude.values,dtype='float64'); _,idx=np.unique(np.round(lon,6),return_index=True);da=da.isel(longitude=np.sort(idx))
