@@ -54,7 +54,7 @@ def surface(run):
     o=path(root,domain,'precipitation_rate',step);r.continuous(R,o,r.RAIN,colors.SymLogNorm(linthresh=.08,vmin=.02,vmax=60,base=10),.92,.02);files.append(entry(o,root,'precipitation_rate',domain,step,'mm/h','intensidad instantánea oficial; cúbico solo visual',box))
     o=path(root,domain,'precipitation_type',step);o.parent.mkdir(parents=True,exist_ok=True);r.ptype(PT,o);files.append(entry(o,root,'precipitation_type',domain,step,'WMO 4.201','categoría oficial; vecino más próximo, nunca interpolada',box,{'observed_codes':codes}))
   if i==1 or i%5==0 or i==len(d.STEPS):print(f'ECMWF surface {i}/{len(d.STEPS)} mapas={len(files)}',flush=True)
- fragment(root,'surface',run,files,sources,1088)
+ fragment(root,'surface',run,files,sources,1352)
 
 def pressure(run,group):
  levels=d.LOWER_LEVELS if group=='lower' else d.UPPER_LEVELS;cycle=run.strftime('%Y%m%dT%HZ');root=OUT/'cycles'/cycle;files=[];sources={}
