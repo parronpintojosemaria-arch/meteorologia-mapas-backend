@@ -29,14 +29,14 @@ def prepare(output):
  run=d.choose_cycle(); p={'schema':1,'model':'ecmwf','cycle':run.strftime('%Y%m%dT%HZ'),'run_utc':run.isoformat(),'horizon_hours':360,'forecast_steps':list(d.STEPS),'status':'ready'}; output.parent.mkdir(parents=True,exist_ok=True); output.write_text(json.dumps(p,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); print(json.dumps(p),flush=True)
 
 def surface(run):
- cycle=run.strftime('%Y%m%dT%HZ'); root=OUT/'cycles'/cycle; files=[]; sources={}
+ cycle=run.strftime('%Y%m%dT%HZ'); root=OUT/'cycles'/cycle; files=[]; sources={}; tp_cache={}
  for i,step in enumerate(d.STEPS,1):
   f,src,errs=d.surface_fields(run,step); sources[f'f{step:03d}']={'core_source':src,'errors':errs[-2:]}
   t,tu,tb=f['2t'];u,uu,ub=f['10u'];v,vu,vb=f['10v'];c,cu,cb=f['tcc'];p,pu,pb=f['msl']
   if u.shape!=v.shape or ub!=vb:raise RuntimeError(f'U/V10 no coinciden f{step:03d}')
   tc=d.celsius(t,tu); wind=np.sqrt(u.astype('float64')**2+v.astype('float64')**2).astype('float32')*3.6; cloud=d.percent(c,cu); pressure=d.hpa(p,pu)
   if step>0:
-   tp,tpu,tpb=f['tp'];sf,sfu,sfb=f['sf'];tp=d.mm_accum(tp,tpu);sf=d.mm_accum(sf,sfu)
+   tp,tpu,tpb=f['tp'];sf,sfu,sfb=f['sf'];tp=d.mm_accum(tp,tpu);sf=d.mm_accum(sf,sfu);tp_cache[step]=(tp,tpb)
   for domain in ('spain','europe'):
    cfg=DOMAINS[domain];box=cfg['bbox'];w=int(cfg['render_width']);T=d.project(tc,tb,box,w);W=d.project(wind,ub,box,w);C=d.project(cloud,cb,box,w);P=d.project(pressure,pb,box,w)
    o=path(root,domain,'temperature_2m',step);r.continuous(T,o,r.TEMP,colors.Normalize(-20,45,clip=True),.89);files.append(entry(o,root,'temperature_2m',domain,step,'°C','temperatura oficial 2 m; suavizado solo visual',box))
@@ -47,6 +47,13 @@ def surface(run):
     TP=d.project(tp,tpb,box,w);SF=d.project(sf,sfb,box,w)
     o=path(root,domain,'precipitation_total',step);r.continuous(TP,o,r.RAIN,colors.SymLogNorm(linthresh=.15,vmin=.05,vmax=300,base=10),.9,.05);files.append(entry(o,root,'precipitation_total',domain,step,'mm','acumulado oficial desde inicio de pasada',box))
     o=path(root,domain,'snowfall_water_equivalent',step);r.continuous(SF,o,r.SNOW,colors.SymLogNorm(linthresh=.1,vmin=.05,vmax=150,base=10),.91,.05);files.append(entry(o,root,'snowfall_water_equivalent',domain,step,'mm','nevada acumulada en equivalente de agua oficial',box))
+    if step%6==0:
+     if step==6: prev=np.zeros_like(tp,dtype='float32'); prevb=tpb
+     else:
+      prev,prevb=tp_cache[step-6]
+      if prevb!=tpb: raise RuntimeError(f'TP 6h mallas distintas f{step-6:03d}->f{step:03d}')
+     P6=d.project(np.maximum(tp-prev,0).astype('float32'),tpb,box,w)
+     o=path(root,domain,'precipitation_6h',step);r.continuous(P6,o,r.RAIN,colors.SymLogNorm(linthresh=.15,vmin=.05,vmax=150,base=10),.92,.05);files.append(entry(o,root,'precipitation_6h',domain,step,'mm','acumulado real de 6 h derivado por diferencia de acumulados oficiales de la misma pasada',box,{'period_start_hours':step-6,'period_end_hours':step}))
   if step in d.PRECIP_STEPS:
    (rv,ru,rb),(pv,pu2,pb2),src2,e2=d.precip_extra(run,step);rate=d.mmh(rv,ru);sources[f'f{step:03d}'].update({'extra_source':src2,'extra_errors':e2[-2:]});codes=sorted(int(x) for x in np.unique(np.rint(pv[np.isfinite(pv)])))
    for domain in ('spain','europe'):
@@ -54,7 +61,7 @@ def surface(run):
     o=path(root,domain,'precipitation_rate',step);r.continuous(R,o,r.RAIN,colors.SymLogNorm(linthresh=.08,vmin=.02,vmax=60,base=10),.92,.02);files.append(entry(o,root,'precipitation_rate',domain,step,'mm/h','intensidad instantánea oficial; cúbico solo visual',box))
     o=path(root,domain,'precipitation_type',step);o.parent.mkdir(parents=True,exist_ok=True);r.ptype(PT,o);files.append(entry(o,root,'precipitation_type',domain,step,'WMO 4.201','categoría oficial; vecino más próximo, nunca interpolada',box,{'observed_codes':codes}))
   if i==1 or i%5==0 or i==len(d.STEPS):print(f'ECMWF surface {i}/{len(d.STEPS)} mapas={len(files)}',flush=True)
- fragment(root,'surface',run,files,sources,1352)
+ fragment(root,'surface',run,files,sources,1472)
 
 def pressure(run,group):
  levels=d.LOWER_LEVELS if group=='lower' else d.UPPER_LEVELS;cycle=run.strftime('%Y%m%dT%HZ');root=OUT/'cycles'/cycle;files=[];sources={}
