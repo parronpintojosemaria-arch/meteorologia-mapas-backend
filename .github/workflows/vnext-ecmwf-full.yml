@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: vnext-ecmwf-full-no-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   prepare:
