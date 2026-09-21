@@ -1,0 +1,47 @@
+name: TEMP · comprobar horas IFS tprate ptype
+
+on:
+  push:
+    branches:
+      - vnext-mapas-profesional
+    paths:
+      - '.github/workflows/ecmwf-precip-steps-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Comprobar pasos ausentes actuales
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path('scripts').resolve()))
+          import vnext_ecmwf_data as d
+          run=d.choose_cycle()
+          print('CICLO',run.isoformat(),flush=True)
+          steps=[30,54,90,108,132,150,180,216,300,324,348]
+          ok=[]
+          for step in steps:
+              try:
+                  (r,ru,rb),(p,pu,pb),src,errs=d.precip_extra(run,step)
+                  print('OK',step,src,r.shape,p.shape,ru,pu,flush=True)
+                  ok.append(step)
+              except Exception as e:
+                  print('FAIL',step,repr(e),flush=True)
+                  raise
+          assert ok==steps
+          print('TODOS LOS PASOS DE PRUEBA DISPONIBLES',ok,flush=True)
+          PY
