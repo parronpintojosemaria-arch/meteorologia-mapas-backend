@@ -1,4 +1,4 @@
-name: vNext · ECMWF completo HD · 3.392 mapas · sin publicar
+name: vNext · ECMWF completo HD · 3.512 mapas · sin publicar
 
 on:
   workflow_dispatch:
@@ -89,7 +89,7 @@ jobs:
           import json, os
           from pathlib import Path
           from PIL import Image
-          expected={'surface':1352,'lower':1020,'upper':1020}
+          expected={'surface':1472,'lower':1020,'upper':1020}
           group=os.environ['GROUP']; cycle=os.environ['CYCLE']
           root=Path('vnext-full-out/ecmwf/cycles')/cycle
           f=root/f'fragment-{group}.json'
@@ -114,7 +114,7 @@ jobs:
           compression-level: 1
 
   assemble:
-    name: Ensamblar · validar 3.392 · medir espacio · current candidato
+    name: Ensamblar · validar 3.512 · medir espacio · current candidato
     needs: [prepare, generate]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -152,9 +152,9 @@ jobs:
           from pathlib import Path
           r=json.loads(Path('vnext-full-summary/ecmwf/report.json').read_text())
           c=json.loads(Path('vnext-full-summary/ecmwf/current-candidate.json').read_text())
-          assert r['status']=='ok' and r['maps']==3392 and r['production_changed'] is False
-          assert c['status']=='ready' and c['file_count']==3392
-          print('VNEXT ECMWF FULL OK · 3392 ·',r['image_mib'],'MiB · fits single repo:',r['fits_single_model_pages_repo'])
+          assert r['status']=='ok' and r['maps']==3512 and r['production_changed'] is False
+          assert c['status']=='ready' and c['file_count']==3512
+          print('VNEXT ECMWF FULL OK · 3512 ·',r['image_mib'],'MiB · fits single repo:',r['fits_single_model_pages_repo'])
           PY
       - name: Subir informe y muestras visuales
         uses: actions/upload-artifact@v4
