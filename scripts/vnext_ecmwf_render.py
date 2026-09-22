@@ -42,12 +42,14 @@ def _canvas(w,h):
  fig=plt.figure(figsize=(w/RENDER_DPI,h/RENDER_DPI),dpi=RENDER_DPI); ax=fig.add_axes([0,0,1,1]); ax.set_axis_off(); ax.set_xlim(-.5,w-.5); ax.set_ylim(h-.5,-.5); return fig,ax
 
 
-def _save(fig,out,size):
+def _save(fig,out,size,lossless=False):
  out.parent.mkdir(parents=True,exist_ok=True); png=out.with_suffix('.png'); fig.savefig(png,dpi=RENDER_DPI,transparent=True,pad_inches=0); plt.close(fig)
  with Image.open(png) as im:
   im.load()
   if im.size!=size: raise RuntimeError(f'PNG {im.size}!={size}')
-  im.convert('RGBA').save(out,'WEBP',quality=WEBP_QUALITY,method=6,exact=True)
+  rgba=im.convert('RGBA')
+  if lossless: rgba.save(out,'WEBP',lossless=True,method=6,exact=True)
+  else: rgba.save(out,'WEBP',quality=WEBP_QUALITY,method=6,exact=True)
  png.unlink(missing_ok=True)
  with Image.open(out) as im: im.verify()
 
@@ -78,7 +80,7 @@ def mslp(a,out):
  if len(lev)>=2:
   cs=ax.contour(a,levels=lev,origin='upper',colors='#102a43',linewidths=1.18,alpha=.97); labels=ax.clabel(cs,inline=True,fontsize=9.2,fmt=lambda x:f'{int(round(x))}',inline_spacing=4)
   for t in labels: t.set_path_effects([pe.withStroke(linewidth=2.8,foreground='white')])
- _save(fig,out,(w,h))
+ _save(fig,out,(w,h),lossless=True)
 
 
 def temp850(a,out):
