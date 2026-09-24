@@ -285,8 +285,7 @@ def fragment(cycle_dir: Path, model: str, run: datetime, files: list[dict], sour
         },
         'render': {'webp_quality': R.WEBP_QUALITY, 'dpi': R.RENDER_DPI, 'continuous': 'cubic'}
     }
-    (cycle_dir / 'fragment-moisture.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '
-', encoding='utf-8')
+    (cycle_dir / 'fragment-moisture.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
 def generate(model: str, run: datetime) -> None:
