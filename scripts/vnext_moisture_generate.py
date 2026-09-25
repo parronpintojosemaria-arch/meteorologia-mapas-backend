@@ -263,7 +263,7 @@ def gfs_fields(run: datetime, step: int):
         elif qb != bounds: raise RuntimeError(f'GFS moisture f{step:03d}: niveles con mallas distintas')
         levels[lev] = (q_kgkg(q, qu), wind_ms(u, uu), wind_ms(v, vu))
     for p in paths: p.unlink(missing_ok=True)
-    tc, tcu, tcb, tcurls = G.retrieve(run, step, 'lev_entire_atmosphere', 'var_PWAT')
+    tc, tcu, tcb, tcurls = G.retrieve(run, step, 'all_lev', 'var_PWAT')
     mag, iu, iv = integrate_ivt(levels)
     return (mag, iu, iv, bounds), (water_mm(tc, tcu), tcb), {'pressure_urls': urls, 'pwat_urls': tcurls}
 
