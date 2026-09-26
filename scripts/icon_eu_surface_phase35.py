@@ -163,14 +163,31 @@ def render(values, bounds, out: Path, cmap: str, vmin: float, vmax: float, alpha
     dst = np.full((dh, dw), np.nan, dtype="float32")
     reproject(source=values.astype("float32"), destination=dst, src_transform=src_transform, src_crs="EPSG:4326", dst_transform=dst_transform, dst_crs="EPSG:3857", src_nodata=np.nan, dst_nodata=np.nan, resampling=Resampling.bilinear)
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
-    rgba = np.asarray(matplotlib.colormaps.get_cmap(cmap)(norm(dst), bytes=True), dtype="uint8")
+    if cmap == "viridis":
+        cm = matplotlib.colors.LinearSegmentedColormap.from_list("mi_icon_wind_v3", [
+            "#dff8ff","#9ee8ff","#4fd4e8","#19b9c6","#20aa89","#74c84a","#cbd63b",
+            "#f1d33b","#f7a23a","#ef6b3d","#dc3e55","#b52c76","#813b9e","#502a82"
+        ], N=768)
+    elif cmap == "turbo":
+        cm = matplotlib.colors.LinearSegmentedColormap.from_list("mi_icon_rain_v3", [
+            "#dff7ff","#9ee7ff","#50cfff","#1ba7e8","#1786da","#16b6a0","#43c86b",
+            "#a8d63f","#f0dd3f","#ffc13d","#ff8a30","#f0523a","#cf284c","#86164f"
+        ], N=768)
+    elif cmap == "Greys":
+        cm = matplotlib.colors.LinearSegmentedColormap.from_list("mi_icon_cloud_v3", [
+            "#b9d8e8","#d7e6ee","#eef2f4","#ffffff"
+        ], N=512)
+    else:
+        cm = matplotlib.colormaps.get_cmap(cmap)
+    rgba = np.asarray(cm(norm(dst), bytes=True), dtype="uint8")
     mask = np.isfinite(dst)
     if zero_transparent:
         mask &= dst > 0.01
-    rgba[..., 3] = np.where(mask, alpha, 0).astype("uint8")
+    visual_alpha = max(246, min(255, int(alpha)))
+    rgba[..., 3] = np.where(mask, visual_alpha, 0).astype("uint8")
     out.parent.mkdir(parents=True, exist_ok=True)
     _brand_img = brand_image(Image.fromarray(rgba, "RGBA"), out)
-    _brand_img.save(out, "WEBP", quality=88, method=6)
+    _brand_img.save(out, "WEBP", quality=92, method=6)
 
 
 def record(out, bounds, units, values, urls, extra=None):
