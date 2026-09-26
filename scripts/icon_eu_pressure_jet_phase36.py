@@ -1,4 +1,14 @@
-#!/usr/bin/env python3
+#!
+ICON_TEMP_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list("mi_icon_temp_aloft_v3", [
+    "#4b0d83","#5b1aad","#4c38c7","#3459d1","#2683d6","#22acd4","#2cc7bd",
+    "#4fd18a","#83d653","#b9dd37","#e8e43a","#ffe13a","#ffc632","#ffa126",
+    "#f47b21","#ea571f","#dc3725","#c51f34","#a9154a","#7e1c5d","#541647"
+], N=1024)
+ICON_JET_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list("mi_icon_jet_v3", [
+    "#e8f8ff","#b8e8ff","#68d6eb","#28bec3","#25ae82","#75c84b","#cdd53d",
+    "#f5d13b","#f7a63a","#ef6d3f","#dc3e55","#b62c76","#813b9e","#502a82"
+], N=768)
+/usr/bin/env python3
 from __future__ import annotations
 
 import bz2
@@ -150,7 +160,7 @@ def save_figure(fig, out):
     fig.savefig(tmp, transparent=True, pad_inches=0)
     plt.close(fig)
     with Image.open(tmp) as img:
-        img.convert("RGBA").save(out, "WEBP", quality=88, method=6)
+        img.convert("RGBA").save(out, "WEBP", quality=92, method=6)
     tmp.unlink(missing_ok=True)
 
 
@@ -163,7 +173,7 @@ def render_pressure(tc, gh, level, bounds, out):
     fig = plt.figure(figsize=(w * 4 / 100, h * 4 / 100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1]); ax.set_axis_off()
     st = LEVEL_STYLE[level]
-    ax.imshow(t, origin="upper", cmap="turbo", vmin=st["tmin"], vmax=st["tmax"], interpolation="bilinear", aspect="auto", alpha=0.88)
+    ax.imshow(t, origin="upper", cmap=ICON_TEMP_CMAP, vmin=st["tmin"], vmax=st["tmax"], interpolation="bicubic", aspect="auto", alpha=0.98)
     finite = z[np.isfinite(z)]
     if finite.size:
         spacing = st["contour"]
@@ -185,8 +195,8 @@ def render_jet(speed, gh, bounds, out):
     h, w = sp.shape
     fig = plt.figure(figsize=(w * 4 / 100, h * 4 / 100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1]); ax.set_axis_off()
-    rgba = matplotlib.colormaps.get_cmap("turbo")(matplotlib.colors.Normalize(vmin=60, vmax=360, clip=True)(sp))
-    rgba[..., 3] = np.where(np.isfinite(sp) & (sp >= 60), 0.88, 0.0)
+    rgba = ICON_JET_CMAP(matplotlib.colors.Normalize(vmin=60, vmax=360, clip=True)(sp))
+    rgba[..., 3] = np.where(np.isfinite(sp) & (sp >= 60), 0.98, 0.0)
     ax.imshow(rgba, origin="upper", interpolation="bilinear", aspect="auto")
     finite = z[np.isfinite(z)]
     if finite.size:
