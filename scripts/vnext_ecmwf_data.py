@@ -14,7 +14,7 @@ STEPS=tuple(range(0,145,3))+tuple(range(150,361,6))
 PRECIP_STEPS=tuple(step for step in STEPS if step>0)  # tprate/ptype verificados en pasos regulares IFS 50r1
 LOWER_LEVELS=(925,850,700,500); UPPER_LEVELS=(300,250,200); JET_LEVELS=(300,250,200)
 SOURCE_CROP={'west':-40.0,'east':60.0,'south':22.0,'north':76.0}; G0=9.80665
-SOURCE_ORDER={'prepare':('ecmwf','aws','google'),'surface':('ecmwf','aws','google'),'lower':('aws','google','ecmwf'),'upper':('google','aws','ecmwf')}
+SOURCE_ORDER={'prepare':('ecmwf','aws','google'),'surface':('ecmwf','aws','google'),'lower':('google','aws','ecmwf'),'upper':('google','aws','ecmwf')}
 
 def sha256_file(path:Path)->str:
  h=hashlib.sha256()
