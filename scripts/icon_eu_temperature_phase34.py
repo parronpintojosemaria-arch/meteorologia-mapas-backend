@@ -175,12 +175,17 @@ def render(values, bounds, out: Path):
         resampling=Resampling.bilinear,
     )
     norm = matplotlib.colors.Normalize(vmin=-30, vmax=45, clip=True)
-    rgba = matplotlib.colormaps.get_cmap("turbo")(norm(dst), bytes=True)
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list("mi_icon_temp_v3", [
+        "#4b0d83","#5b1aad","#4c38c7","#3459d1","#2683d6","#22acd4","#2cc7bd",
+        "#4fd18a","#83d653","#b9dd37","#e8e43a","#ffe13a","#ffc632","#ffa126",
+        "#f47b21","#ea571f","#dc3725","#c51f34","#a9154a","#7e1c5d","#541647"
+    ], N=1024)
+    rgba = cmap(norm(dst), bytes=True)
     rgba = np.asarray(rgba, dtype="uint8")
-    rgba[..., 3] = np.where(np.isfinite(dst), 200, 0).astype("uint8")
+    rgba[..., 3] = np.where(np.isfinite(dst), 248, 0).astype("uint8")
     out.parent.mkdir(parents=True, exist_ok=True)
     _brand_img = brand_image(Image.fromarray(rgba, "RGBA"), out)
-    _brand_img.save(out, "WEBP", quality=88, method=6)
+    _brand_img.save(out, "WEBP", quality=92, method=6)
 
 
 def validate_domain(bounds):
