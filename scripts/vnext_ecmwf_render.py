@@ -25,10 +25,11 @@ WIND=colors.LinearSegmentedColormap.from_list('wind_v2',[
  '#e8f8ff','#b8e8ff','#68d6eb','#28bec3','#25ae82','#75c84b','#cdd53d',
  '#f5d13b','#f7a63a','#ef6d3f','#dc3e55','#b62c76','#813b9e','#502a82'
 ],N=512)
-TEMP=colors.LinearSegmentedColormap.from_list('temp_v2',[
- '#3b1b78','#4936a8','#425ec8','#347fd7','#2ca6dd','#67c9e3','#b9e9ee',
- '#f1f3dc','#fff1a8','#ffd168','#ffad4a','#f47b42','#df4b43','#b9293e','#76172d'
-],N=512)
+TEMP=colors.LinearSegmentedColormap.from_list('temp_v3',[
+ '#4b0d83','#5b1aad','#4c38c7','#3459d1','#2683d6','#22acd4','#2cc7bd',
+ '#4fd18a','#83d653','#b9dd37','#e8e43a','#ffe13a','#ffc632','#ffa126',
+ '#f47b21','#ea571f','#dc3725','#c51f34','#a9154a','#7e1c5d','#541647'
+],N=1024)
 SNOW=colors.LinearSegmentedColormap.from_list('snow_v2',[
  '#f4fdff','#d9f6ff','#aeeaff','#75d6f6','#43b7e9','#348ed8','#5368cc','#7047b5','#8e3aa4'
 ],N=512)
@@ -57,7 +58,10 @@ def _save(fig,out,size,lossless=False):
 def continuous(a,out,cmap,norm,alpha=.9,under=None):
  h,w=a.shape; fig,ax=_canvas(w,h); shown=np.ma.masked_invalid(a)
  if under is not None: shown=np.ma.masked_where(~np.isfinite(a)|(a<under),a)
- ax.imshow(shown,origin='upper',cmap=cmap,norm=norm,interpolation='bicubic',aspect='auto',alpha=alpha); _save(fig,out,(w,h))
+ # vNext 3: color casi opaco. Conservamos la interpolación bicúbica exclusivamente
+ # como suavizado visual; no crea nuevos datos ni aumenta la resolución del modelo.
+ visual_alpha=max(.97,min(1.0,float(alpha)))
+ ax.imshow(shown,origin='upper',cmap=cmap,norm=norm,interpolation='bicubic',aspect='auto',alpha=visual_alpha); _save(fig,out,(w,h))
 
 
 def cloud(a,out):
@@ -84,7 +88,7 @@ def mslp(a,out):
 
 
 def temp850(a,out):
- h,w=a.shape; fig,ax=_canvas(w,h); ax.imshow(a,origin='upper',cmap=TEMP,norm=colors.Normalize(-30,30,clip=True),interpolation='bicubic',aspect='auto',alpha=.92); f=a[np.isfinite(a)]
+ h,w=a.shape; fig,ax=_canvas(w,h); ax.imshow(a,origin='upper',cmap=TEMP,norm=colors.Normalize(-30,30,clip=True),interpolation='bicubic',aspect='auto',alpha=.98); f=a[np.isfinite(a)]
  if f.size:
   lo=math.ceil(float(f.min())/4)*4; hi=math.floor(float(f.max())/4)*4; lev=np.arange(lo,hi+4,4,dtype='float32')
   if len(lev)>=2:
@@ -96,7 +100,7 @@ def temp850(a,out):
 def geop850(a,out):
  h,w=a.shape; f=a[np.isfinite(a)]
  if not f.size: raise RuntimeError('Z850 sin datos')
- fig,ax=_canvas(w,h); v0,v1=float(f.min()),float(f.max()); ax.imshow(a,origin='upper',cmap=ZCMAP,norm=colors.Normalize(v0,v1,clip=True),interpolation='bicubic',aspect='auto',alpha=.9); lo=math.floor(v0/30)*30; hi=math.ceil(v1/30)*30; lev=np.arange(lo,hi+30,30,dtype='float32')
+ fig,ax=_canvas(w,h); v0,v1=float(f.min()),float(f.max()); ax.imshow(a,origin='upper',cmap=ZCMAP,norm=colors.Normalize(v0,v1,clip=True),interpolation='bicubic',aspect='auto',alpha=.97); lo=math.floor(v0/30)*30; hi=math.ceil(v1/30)*30; lev=np.arange(lo,hi+30,30,dtype='float32')
  if len(lev)>=2:
   cs=ax.contour(a,levels=lev,origin='upper',colors='#111827',linewidths=.88,alpha=.88); labs=ax.clabel(cs,inline=True,fontsize=8.4,fmt=lambda x:f'{int(round(x/10))}',inline_spacing=4)
   for t in labs:t.set_path_effects([pe.withStroke(linewidth=2.3,foreground='white')])
@@ -105,7 +109,7 @@ def geop850(a,out):
 
 def analysis(t,z,level,out):
  if t.shape!=z.shape: raise RuntimeError(f'T/Z {level} distintos')
- h,w=t.shape; st=LEVEL_STYLE[level]; fig,ax=_canvas(w,h); ax.imshow(t,origin='upper',cmap=TEMP,norm=colors.Normalize(st['tmin'],st['tmax'],clip=True),interpolation='bicubic',aspect='auto',alpha=.92); f=z[np.isfinite(z)]
+ h,w=t.shape; st=LEVEL_STYLE[level]; fig,ax=_canvas(w,h); ax.imshow(t,origin='upper',cmap=TEMP,norm=colors.Normalize(st['tmin'],st['tmax'],clip=True),interpolation='bicubic',aspect='auto',alpha=.98); f=z[np.isfinite(z)]
  if f.size:
   sp=st['z_spacing']; lo=math.floor(float(f.min())/sp)*sp; hi=math.ceil(float(f.max())/sp)*sp; minor=np.arange(lo,hi+sp,sp,dtype='float32'); major=np.arange(math.floor(lo/(sp*2))*sp*2,hi+sp*2,sp*2,dtype='float32')
   if len(minor)>=2: ax.contour(z,levels=minor,origin='upper',colors='#334155',linewidths=.62,alpha=.60)
